@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Auditoria - ElectroGalindez{% endblock %}
+{% block page_title %}Auditoria del Sistema{% endblock %}
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="busquedaLog" placeholder="Buscar por usuario, accion..." oninput="filtrarLogs()">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <span class="badge bg-primary fs-6" id="contadorLogs">{{ logs|length }} registros</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-journal-text"></i> Registro de Actividad</div>
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle mb-0" id="tablaLogs">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Usuario</th>
+                    <th>Accion</th>
+                    <th>Detalles</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in logs %}
+                <tr data-search="{{ (l.usuario or '')|lower }} {{ (l.accion or '')|lower }} {{ (l.detalles or '')|lower }}">
+                    <td class="text-nowrap">{{ l.fecha.strftime('%d/%m/%Y %H:%M') if l.fecha else '' }}</td>
+                    <td><span class="badge bg-secondary">{{ l.usuario or 'N/A' }}</span></td>
+                    <td>
+                        {% set accion = (l.accion or '')|lower %}
+                        {% if 'crear' in accion %}
+                        <span class="badge bg-success">{{ l.accion }}</span>
+                        {% elif 'editar' in accion or 'update' in accion %}
+                        <span class="badge bg-warning text-dark">{{ l.accion }}</span>
+                        {% elif 'eliminar' in accion or 'delete' in accion %}
+                        <span class="badge bg-danger">{{ l.accion }}</span>
+                        {% else %}
+                        <span class="badge bg-info">{{ l.accion }}</span>
+                        {% endif %}
+                    </td>
+                    <td><small class="text-muted">{{ (l.detalles or '')|truncate(120) }}</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if not logs %}
+        <div class="table-empty">
+            <i class="bi bi-journal-text"></i>
+            No hay registros de auditoria
+        </div>
+        {% endif %}
+        {% if total_pages > 1 %}
+        <nav class="py-3 px-3 border-top">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('logs_page', page=page-1) }}">&laquo;</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page or p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('logs_page', page=p) }}">{{ p }}</a>
+                    </li>
+                    {% elif p == page-3 or p == page+3 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('logs_page', page=page+1) }}">&raquo;</a>
+                </li>
+            </ul>
+        </nav>
+        <p class="text-muted text-center mb-0 small">{{ total_logs }} registros en total</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrarLogs() {
+    const q = document.getElementById('busquedaLog').value.toLowerCase();
+    let visibles = 0;
+    document.querySelectorAll('#tablaLogs tbody tr').forEach(tr => {
+        const match = (tr.dataset.search || '').includes(q);
+        tr.style.display = match ? '' : 'none';
+        if (match) visibles++;
+    });
+    document.getElementById('contadorLogs').textContent = visibles + ' registros';
+}
+</script>
+{% endblock %}

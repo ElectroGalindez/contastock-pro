@@ -41,10 +41,23 @@ def registrar_log(usuario: str, accion: str, detalles):
 # ---------------------------
 # Listar todos los logs
 # ---------------------------
-def listar_logs() -> List[Dict[str, Any]]:
+def listar_logs(limit=None, offset=None) -> List[Dict[str, Any]]:
+    sql = "SELECT * FROM logs ORDER BY fecha DESC"
+    params = {}
+    if limit is not None:
+        sql += " LIMIT :limit"
+        params["limit"] = limit
+    if offset is not None:
+        sql += " OFFSET :offset"
+        params["offset"] = offset
     with engine.connect() as conn:
-        result = conn.execute(text("SELECT * FROM logs ORDER BY fecha DESC"))
-        return [dict(row) for row in result.fetchall()]
+        result = conn.execute(text(sql), params)
+        return [dict(row) for row in result.mappings().all()]
+
+
+def contar_logs() -> int:
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT COUNT(*) FROM logs")).scalar()
 
 
 def obtener_logs_usuario(username: str):
@@ -58,4 +71,4 @@ def obtener_logs_usuario(username: str):
     """)
     with engine.connect() as conn:
         result = conn.execute(query, {"usuario": username})
-        return [row._asdict() for row in result]
+        return [dict(row) for row in result.mappings().all()]

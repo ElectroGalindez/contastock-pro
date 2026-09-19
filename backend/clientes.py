@@ -122,11 +122,51 @@ def update_debt(cliente_id: str, monto: float, usuario: str = "sistema") -> Dict
         registrar_log(usuario, "error_update_debt", {"id": cliente_id, "monto": monto, "error": str(e)})
         raise
 
-def list_clients() -> list[Dict[str, Any]]:
+
+def recalcular_deuda_cliente(cliente_id: str, usuario: str = "sistema") -> float:
+    """Recalcula deuda_total del cliente a partir de lo que REALMENTE debe:
+    suma de los montos restantes (cantidad * precio) de sus deudas pendientes.
+    Se usa al pagar deudas para mantener el saldo sincronizado."""
+    try:
+        with engine.begin() as conn:
+            calculada = conn.execute(text("""
+                SELECT COALESCE(SUM(dd.cantidad * dd.precio_unitario), 0)
+                FROM deudas_detalle dd
+                JOIN deudas d ON d.id = dd.deuda_id
+                WHERE d.cliente_id = :id AND d.estado = 'pendiente'
+                                  AND dd.estado = 'pendiente'
+            """), {"id": cliente_id}).scalar() or 0
+
+            conn.execute(text("""
+                UPDATE clientes
+                SET deuda_total = :monto
+                WHERE id = :id
+            """), {"id": cliente_id, "monto": float(calculada)})
+        if usuario:
+            registrar_log(usuario, "recalcular_deuda", {"id": cliente_id, "monto": float(calculada)})
+        return float(calculada)
+    except Exception as e:
+        if usuario:
+            registrar_log(usuario, "error_recalcular_deuda", {"id": cliente_id, "error": str(e)})
+        raise
+
+def list_clients(limit=None, offset=None) -> list[Dict[str, Any]]:
     """Lista todos los clientes con campos esenciales"""
+    sql = "SELECT id, nombre, telefono, ci, chapa, direccion, deuda_total FROM clientes ORDER BY nombre"
+    params = {}
+    if limit is not None:
+        sql += " LIMIT :limit"
+        params["limit"] = limit
+    if offset is not None:
+        sql += " OFFSET :offset"
+        params["offset"] = offset
     with engine.connect() as conn:
-        result = conn.execute(text("SELECT id, nombre, telefono, ci, chapa, direccion, deuda_total FROM clientes ORDER BY nombre"))
+        result = conn.execute(text(sql), params)
         return [dict(r._mapping) for r in result]
+
+def count_clients() -> int:
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT COUNT(*) FROM clientes")).scalar()
 
 def edit_client(cliente_id: str, nombre: Optional[str] = None, telefono: Optional[str] = None,
                 ci: Optional[str] = None, chapa: Optional[str] = None, direccion: Optional[str] = None,

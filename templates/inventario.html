@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Inventario - ElectroGalindez{% endblock %}
+{% block page_title %}Gestion de Inventario{% endblock %}
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="busqueda" placeholder="Buscar por nombre, categoria o ID..." oninput="filtrarTabla()">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="filtroCategoria" onchange="filtrarTabla()">
+                    <option value="">Todas las categorias</option>
+                    {% for c in categorias %}
+                    <option value="{{ c.nombre }}">{{ c.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 text-end">
+                <span class="badge bg-primary fs-6" id="contadorProductos">{{ productos|length }} productos</span>
+            </div>
+            <div class="col-md-12 text-end mt-2">
+                <button class="btn btn-outline-success" onclick="descargarExcel()">
+                    <i class="bi bi-file-earmark-excel"></i> Descargar Excel (Inventario Completo)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle mb-0" id="tablaProductos">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Categoria</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Precio</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in productos %}
+                <tr data-nombre="{{ p.nombre|lower }}" data-categoria="{{ cat_map.get(p.categoria_id, '')|lower }}" data-id="{{ p.id }}">
+                    <td class="text-muted">{{ p.id }}</td>
+                    <td class="fw-semibold">{{ p.nombre }}</td>
+                    <td><span class="badge bg-secondary">{{ cat_map.get(p.categoria_id, 'N/A') }}</span></td>
+                    <td class="text-end {% if p.cantidad|float <= 5 %}text-danger fw-bold{% endif %}">
+                        {% if p.cantidad|float <= 5 %}<i class="bi bi-exclamation-triangle-fill me-1"></i>{% endif %}{{ p.cantidad|int }}
+                    </td>
+                    <td class="text-end">${{ "{:,.2f}".format(p.precio|float) }}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary btn-icon" onclick="editarProducto('{{ p.id }}', '{{ p.nombre }}', '{{ p.precio }}', '{{ p.cantidad }}', '{{ p.categoria_id }}')" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="eliminarProducto('{{ p.id }}', '{{ p.nombre }}')" title="Eliminar">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if not productos %}
+        <div class="table-empty">
+            <i class="bi bi-box-seam"></i>
+            No hay productos registrados
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-plus-circle"></i> Crear / Editar Producto</div>
+    <div class="card-body">
+        <form method="POST" id="formProducto">
+            <input type="hidden" name="action" id="formAction" value="crear">
+            <input type="hidden" name="producto_id" id="formProductoId" value="">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Nombre *</label>
+                    <input type="text" class="form-control" name="nombre" id="formNombre" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Categoria</label>
+                    <select class="form-select" name="categoria_id" id="formCategoria">
+                        {% for c in categorias %}
+                        <option value="{{ c.id }}">{{ c.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Precio</label>
+                    <input type="number" step="0.01" class="form-control" name="precio" id="formPrecio" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Cantidad</label>
+                    <input type="number" class="form-control" name="cantidad" id="formCantidad" value="0" min="0">
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar</button>
+                <button type="button" class="btn btn-secondary" onclick="limpiarForm()"><i class="bi bi-x-lg"></i> Limpiar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function descargarExcel() {
+    fetch('/inventario/excel', { method: 'GET' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                const cont = document.createElement('div');
+                cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
+                    + '<div class="d-flex"><div class="toast-body">'
+                    + '<i class="bi bi-check-circle-fill me-2"></i>Excel de inventario abierto en su visor.<br>'
+                    + '<small>Guardado en: ' + data.archivo + '</small>'
+                    + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+                document.body.appendChild(cont);
+                setTimeout(() => cont.remove(), 6000);
+            } else {
+                alert('Error: ' + (data.error || 'No se pudo generar el Excel'));
+            }
+        })
+        .catch(err => alert('Error de conexion: ' + err));
+}
+function filtrarTabla() {
+    const busqueda = document.getElementById('busqueda').value.toLowerCase();
+    const catFiltro = document.getElementById('filtroCategoria').value.toLowerCase();
+    let visibles = 0;
+    document.querySelectorAll('#tablaProductos tbody tr').forEach(tr => {
+        const nombre = tr.dataset.nombre || '';
+        const cat = tr.dataset.categoria || '';
+        const id = tr.dataset.id || '';
+        const match = (nombre.includes(busqueda) || cat.includes(busqueda) || id.includes(busqueda)) && (!catFiltro || cat.includes(catFiltro));
+        tr.style.display = match ? '' : 'none';
+        if (match) visibles++;
+    });
+    document.getElementById('contadorProductos').textContent = visibles + ' productos';
+}
+function editarProducto(id, nombre, precio, cantidad, catId) {
+    document.getElementById('formAction').value = 'editar';
+    document.getElementById('formProductoId').value = id;
+    document.getElementById('formNombre').value = nombre;
+    document.getElementById('formPrecio').value = precio;
+    document.getElementById('formCantidad').value = cantidad;
+    document.getElementById('formCategoria').value = catId;
+    document.getElementById('formNombre').focus();
+}
+function eliminarProducto(id, nombre) {
+    if (confirmar('Eliminar producto "' + nombre + '"?')) {
+        const form = document.getElementById('formProducto');
+        document.getElementById('formAction').value = 'eliminar';
+        document.getElementById('formProductoId').value = id;
+        form.submit();
+    }
+}
+function limpiarForm() {
+    document.getElementById('formAction').value = 'crear';
+    document.getElementById('formProductoId').value = '';
+    document.getElementById('formNombre').value = '';
+    document.getElementById('formPrecio').value = '0';
+    document.getElementById('formCantidad').value = '0';
+}
+</script>
+{% endblock %}

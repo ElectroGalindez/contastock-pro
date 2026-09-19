@@ -151,13 +151,83 @@ def editar_venta_extra(
     return None
 
 
+def marcar_venta_pagada(sale_id: str, usuario: Optional[str] = None) -> Optional[dict]:
+    """Marca una venta como totalmente pagada (pagado = total, saldo = 0)."""
+    with engine.begin() as conn:
+        update_query = text("""
+            UPDATE ventas
+            SET pagado = total, saldo = 0
+            WHERE id = :id
+            RETURNING *
+        """)
+        updated = conn.execute(update_query, {"id": sale_id}).mappings().first()
+
+        if updated:
+            registrar_log(usuario or "sistema", "venta_pagada", {
+                "venta_id": sale_id,
+                "total": float(updated["total"]),
+                "pagado": float(updated["pagado"])
+            })
+            return dict(updated)
+
+    return None
+
+
+def actualizar_factura_datos(
+    sale_id: str,
+    observaciones: Optional[str] = None,
+    vendedor: Optional[str] = None,
+    telefono_vendedor: Optional[str] = None,
+    chofer: Optional[str] = None,
+    chapa: Optional[str] = None,
+    usuario: Optional[str] = None
+):
+    """Guarda los datos adicionales de la factura, siempre asignando los valores
+    (permite vaciar los campos)."""
+    with engine.begin() as conn:
+        update_query = text("""
+            UPDATE ventas
+            SET observaciones = :observaciones,
+                vendedor = :vendedor,
+                telefono_vendedor = :telefono_vendedor,
+                chofer = :chofer,
+                chapa = :chapa
+            WHERE id = :id
+            RETURNING id
+        """)
+
+        updated = conn.execute(update_query, {
+            "id": sale_id,
+            "observaciones": observaciones,
+            "vendedor": vendedor,
+            "telefono_vendedor": telefono_vendedor,
+            "chofer": chofer,
+            "chapa": chapa,
+        }).mappings().first()
+
+        if updated:
+            registrar_log(usuario or "sistema", "editar_venta_extra", {"id": sale_id})
+            return True
+
+    return False
+
+
 # ----------------------------
 # Listar ventas
 # ----------------------------
-def list_sales():
-    query = text("SELECT * FROM ventas ORDER BY fecha DESC")
+def list_sales(limit=None, offset=None):
+    sql = "SELECT * FROM ventas ORDER BY fecha DESC"
+    params = {}
+    if limit is not None:
+        sql += " LIMIT :limit"
+        params["limit"] = limit
+    if offset is not None:
+        sql += " OFFSET :offset"
+        params["offset"] = offset
+
+    query = text(sql)
     with engine.connect() as conn:
-        resultados = conn.execute(query).mappings().all()
+        resultados = conn.execute(query, params).mappings().all()
 
     ventas_list = []
     for r in resultados:
@@ -173,6 +243,23 @@ def list_sales():
         ventas_list.append(r_dict)
 
     return ventas_list
+
+def count_sales():
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT COUNT(*) FROM ventas")).scalar()
+
+def search_sales(q: str, limit: int = 100):
+    """Busca ventas por ID o nombre del cliente, devolviendo filas con cliente_nombre."""
+    query = text("""
+        SELECT v.*, COALESCE(c.nombre, 'N/A') AS cliente_nombre
+        FROM ventas v
+        LEFT JOIN clientes c ON c.id = v.cliente_id
+        WHERE v.id::text ILIKE :pat OR c.nombre ILIKE :pat
+        ORDER BY v.fecha DESC
+        LIMIT :limit
+    """)
+    with engine.connect() as conn:
+        return [dict(r) for r in conn.execute(query, {"pat": f"%{q}%", "limit": limit}).mappings()]
 
 def get_sale(sale_id: str) -> Optional[Dict]:
     """Devuelve una venta por su ID"""
@@ -208,14 +295,11 @@ def delete_sale(sale_id: str, usuario: Optional[str] = None) -> bool:
     for item in sale.get("productos_vendidos", []):
         increment_stock(item["id_producto"], item["cantidad"])
 
-    # Eliminar la venta de la BD
     with engine.begin() as conn:
+        conn.execute(text("DELETE FROM deudas WHERE venta_id = :id"), {"id": sale_id})
         conn.execute(text("DELETE FROM ventas WHERE id = :id"), {"id": sale_id})
 
-    # 🔹 Preparar datos para el log sin que falle JSON
     log_detalles = copy.deepcopy(sale)
-
-    # Convertir cualquier lista/dict anidado a string JSON
     for key, value in log_detalles.items():
         if isinstance(value, (list, dict)):
             log_detalles[key] = json.dumps(value)
@@ -230,13 +314,85 @@ def listar_ventas_dict():
     return ventas_dict
 
 
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.platypus import Table, TableStyle
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
+def exportar_ventas_dia_excel(fecha_inicio=None, fecha_fin=None) -> bytes:
+    """Genera un Excel con las ventas del rango de fechas dado (inclusive)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from datetime import date as _date
+
+    if fecha_inicio:
+        fi = _date.fromisoformat(fecha_inicio[:10])
+    else:
+        fi = _date.today()
+    if fecha_fin:
+        ff = _date.fromisoformat(fecha_fin[:10])
+    else:
+        ff = _date.today()
+
+    vens = list_sales() or []
+
+    from .clientes import list_clients
+    clis = {c["id"]: c["nombre"] for c in (list_clients() or [])}
+
+    filas = []
+    for v in vens:
+        vfecha = v.get("fecha")
+        if hasattr(vfecha, "date"):
+            vd = vfecha.date()
+        else:
+            continue
+        if not (fi <= vd <= ff):
+            continue
+        cliente = clis.get(v.get("cliente_id"), "Desconocido")
+        estado = "Pagada" if float(v.get("pagado", 0)) >= float(v.get("total", 0)) else "Pendiente"
+        for p in (v.get("productos_vendidos") or []):
+            filas.append({
+                "id_venta": v.get("id"),
+                "fecha": vfecha.strftime("%d/%m/%Y %H:%M") if hasattr(vfecha, "strftime") else str(vfecha),
+                "cliente": cliente,
+                "producto": p.get("nombre", ""),
+                "cantidad": int(p.get("cantidad", 0)),
+                "precio_unitario": float(p.get("precio_unitario", 0)),
+                "subtotal": float(p.get("subtotal", 0)),
+                "total": float(v.get("total", 0)),
+                "pagado": float(v.get("pagado", 0)),
+                "saldo": max(float(v.get("total", 0)) - float(v.get("pagado", 0)), 0),
+                "estado": estado,
+            })
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Ventas del Dia"
+
+    headers = ["Fecha", "Cliente", "Producto", "Cantidad", "Estado"]
+    ws.append(headers)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="2E75B6")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    for f in filas:
+        ws.append([
+            f["fecha"], f["cliente"], f["producto"],
+            f["cantidad"], f["estado"],
+        ])
+
+    for col, ancho in zip("ABCDE", [20, 30, 40, 10, 12]):
+        ws.column_dimensions[col].width = ancho
+    for row in ws.iter_rows(min_row=2):
+        row[3].number_format = '#,##0'
+    ws.cell(row=ws.max_row + 1, column=3, value="TOTAL").font = Font(bold=True)
+    ws.cell(row=ws.max_row, column=4, value=sum(f["cantidad"] for f in filas)).number_format = '#,##0'
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 from io import BytesIO
-import os
 
 def generar_factura_pdf(venta, cliente, productos_vendidos, gestor_info=None, logo_path="assets/logo.png"):
     """
@@ -249,6 +405,12 @@ def generar_factura_pdf(venta, cliente, productos_vendidos, gestor_info=None, lo
     gestor_info: dict opcional con datos del vendedor/chofer
     logo_path: ruta local a logo de la empresa
     """
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    import os
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter

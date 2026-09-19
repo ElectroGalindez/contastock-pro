@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - ElectroGalindez{% endblock %}
+{% block page_title %}Panel General{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card gradient-blue">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50 mb-1">Ventas Hoy</h6>
+                        <h2 class="text-white mb-0">${{ "{:,.2f}".format(total_hoy) }}</h2>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-cash-stack"></i></div>
+                </div>
+                <small class="text-white-50">{{ ventas_hoy_count }} ventas hoy</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card gradient-green">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50 mb-1">Ventas del Mes</h6>
+                        <h2 class="text-white mb-0">${{ "{:,.2f}".format(total_mes) }}</h2>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-calendar-month"></i></div>
+                </div>
+                <small class="text-white-50">Acumulado mensual</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card gradient-red">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50 mb-1">Deudas Pendientes</h6>
+                        <h2 class="text-white mb-0">${{ "{:,.2f}".format(total_deuda) }}</h2>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
+                </div>
+                <small class="text-white-50">{{ cli_con_deuda }} clientes deben</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card-sm h-100">
+            <div class="card-body text-center d-flex flex-column justify-content-center">
+                <i class="bi bi-box-seam text-primary fs-3 mb-1"></i>
+                <h4 class="mb-0">{{ total_productos }}</h4>
+                <small class="text-muted">Productos</small>
+                {% if stock_bajo > 0 %}
+                <span class="badge bg-warning text-dark mt-2">! {{ stock_bajo }} stock bajo</span>
+                {% else %}
+                <span class="badge bg-success mt-2">OK</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card-sm h-100">
+            <div class="card-body text-center d-flex flex-column justify-content-center">
+                <i class="bi bi-people text-success fs-3 mb-1"></i>
+                <h4 class="mb-0">{{ total_clientes }}</h4>
+                <small class="text-muted">Clientes</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card-sm h-100">
+            <div class="card-body text-center d-flex flex-column justify-content-center">
+                <i class="bi bi-person-exclamation text-warning fs-3 mb-1"></i>
+                <h4 class="mb-0">{{ cli_con_deuda }}</h4>
+                <small class="text-muted">Clientes con Deuda</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-bar-chart"></i> Ventas Ultimos 7 Dias</div>
+            <div class="card-body">
+                <div class="chart-box"><canvas id="chart7d"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-graph-up"></i> Ventas Mensuales</div>
+            <div class="card-body">
+                <div class="chart-box"><canvas id="chartMes"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<script>
+const data7d = {{ ventas_por_dia | safe }};
+const dataMes = {{ ventas_por_mes | safe }};
+
+Chart.defaults.font.family = "'Inter', -apple-system, sans-serif";
+Chart.defaults.color = '#94a3b8';
+
+if (Object.keys(data7d).length > 0) {
+    const ctx = document.getElementById('chart7d');
+    const g = ctx.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 250);
+    grad.addColorStop(0, 'rgba(37, 99, 235, 0.55)');
+    grad.addColorStop(1, 'rgba(37, 99, 235, 0.05)');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(data7d),
+            datasets: [{
+                label: 'Ventas ($)',
+                data: Object.values(data7d),
+                backgroundColor: grad,
+                borderColor: '#2563eb',
+                borderWidth: 1.5,
+                borderRadius: 8,
+                borderSkipped: false,
+                maxBarThickness: 42
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: { label: (c) => ' $' + Number(c.parsed.y).toLocaleString('es-CU', {minimumFractionDigits: 2}) }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#eef2f7' } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+}
+
+if (Object.keys(dataMes).length > 0) {
+    const ctx = document.getElementById('chartMes');
+    const g = ctx.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 250);
+    grad.addColorStop(0, 'rgba(16, 185, 129, 0.40)');
+    grad.addColorStop(1, 'rgba(16, 185, 129, 0.02)');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Object.keys(dataMes),
+            datasets: [{
+                label: 'Ventas ($)',
+                data: Object.values(dataMes),
+                borderColor: '#059669',
+                backgroundColor: grad,
+                fill: true,
+                tension: 0.35,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#059669',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: { label: (c) => ' $' + Number(c.parsed.y).toLocaleString('es-CU', {minimumFractionDigits: 2}) }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#eef2f7' } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -9,25 +9,30 @@ from .usuarios import (
 
 from .productos import (
     list_products, get_product, guardar_producto,
-    adjust_stock, update_product, eliminar_producto, editar_producto
+    adjust_stock, update_product, eliminar_producto, editar_producto,
+    exportar_inventario_excel
 )
 
 from .clientes import (
     list_clients, add_client, update_client,
-    delete_client, get_client, edit_client
+    delete_client, get_client, edit_client,
+    recalcular_deuda_cliente
 )
 
 from .ventas import (
     list_sales, get_sale, delete_sale,
     register_sale, generar_factura_pdf,
-    listar_ventas_dict, editar_venta_extra
+    listar_ventas_dict, editar_venta_extra,
+    marcar_venta_pagada, exportar_ventas_dia_excel
 )
 
 from .deudas import (
     list_debts, get_debt, add_debt, update_debt,
     debts_by_client, delete_debt, pay_debt_producto,
     list_detalle_deudas, list_clientes_con_deuda,
-    generar_factura_pago_deuda
+    generar_factura_pago_deuda, registrar_pago,
+    list_pagos, get_pago, exportar_deudas_excel,
+    generar_comprobante_pago
 )
 
 from .categorias import (

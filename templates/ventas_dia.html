@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Ventas del Dia - ElectroGalindez{% endblock %}
+{% block page_title %}Reporte de Ventas del Dia{% endblock %}
+{% block content %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-receipt text-primary fs-3"></i>
+                <h4>{{ total_ventas }}</h4>
+                <small class="text-muted">Ventas</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-box text-info fs-3"></i>
+                <h4>{{ total_productos_vendidos }}</h4>
+                <small class="text-muted">Productos Vendidos</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-check-circle text-success fs-3"></i>
+                <h4>${{ "{:,.0f}".format(total_pagado) }}</h4>
+                <small class="text-muted">Total Pagado</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-exclamation-circle text-danger fs-3"></i>
+                <h4>${{ "{:,.0f}".format(total_pendiente) }}</h4>
+                <small class="text-muted">Deuda Total</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle table-fill">
+            <thead>
+                <tr>
+                    <th style="width:70%">Producto</th>
+                    <th style="width:30%" class="text-center">Cantidad</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in productos_resumen %}
+                <tr>
+                    <td class="fw-semibold">{{ p.producto }}</td>
+                    <td class="text-center"><span class="badge bg-primary">{{ p.cantidad }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if not productos_resumen %}
+        <div class="table-empty">
+            <i class="bi bi-inbox"></i>
+            No hay productos vendidos en este rango de fechas
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-table"></i> Detalle de Ventas</div>
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle table-fill">
+            <thead>
+                <tr>
+                    <th style="width:15%">Fecha</th>
+                    <th style="width:22%">Cliente</th>
+                    <th style="width:33%">Producto</th>
+                    <th style="width:12%" class="text-center">Cantidad</th>
+                    <th style="width:18%">Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in filas %}
+                <tr>
+                    <td class="text-muted">{{ f.fecha }}</td>
+                    <td>{{ f.cliente }}</td>
+                    <td>{{ f.producto }}</td>
+                    <td class="text-center">{{ f.cantidad }}</td>
+                    <td>
+                        {% if f.estado == 'Pagada' %}
+                        <span class="badge bg-success">Pagada</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">Pendiente</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if not filas %}
+        <div class="table-empty">
+            <i class="bi bi-inbox"></i>
+            No hay ventas en este rango de fechas
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function descargarExcel() {
+    var fi = document.querySelector('input[name="fecha_inicio"]').value;
+    var ff = document.querySelector('input[name="fecha_fin"]').value;
+    fetch('/ventas_dia/excel?fecha_inicio=' + encodeURIComponent(fi) + '&fecha_fin=' + encodeURIComponent(ff), { method: 'GET' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.ok) {
+                var cont = document.createElement('div');
+                cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
+                    + '<div class="d-flex"><div class="toast-body">'
+                    + '<i class="bi bi-check-circle-fill me-2"></i>Excel de ventas del periodo abierto en su visor.<br>'
+                    + '<small>Guardado en: ' + data.archivo + '</small>'
+                    + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+                document.body.appendChild(cont);
+                setTimeout(function() { cont.remove(); }, 6000);
+            } else {
+                alert('Error: ' + (data.error || 'No se pudo generar el Excel'));
+            }
+        })
+        .catch(function(err) { alert('Error de conexion: ' + err); });
+}
+</script>
+{% endblock %}

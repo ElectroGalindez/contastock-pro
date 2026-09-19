@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Clientes - ElectroGalindez{% endblock %}
+{% block page_title %}Gestion de Clientes{% endblock %}
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="busquedaCli" placeholder="Buscar por nombre o ID..." oninput="filtrarClientes()" autocomplete="off">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <span class="badge bg-primary fs-6" id="contadorClientes">{{ clientes|length }} clientes</span>
+            </div>
+            <div class="col-md-auto ms-auto">
+                <button class="btn btn-primary" onclick="nuevoCliente()">
+                    <i class="bi bi-plus-lg"></i> Crear Cliente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle mb-0" id="tablaClientes">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Telefono</th>
+                    <th>CI</th>
+                    <th>Chapa</th>
+                    <th>Direccion</th>
+                    <th class="text-end">Deuda</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in clientes %}
+                <tr data-nombre="{{ c.nombre|lower }}" data-id="{{ c.id }}">
+                    <td class="text-muted">{{ c.id }}</td>
+                    <td class="fw-semibold">{{ c.nombre }}</td>
+                    <td>{{ c.telefono or '' }}</td>
+                    <td>{{ c.ci or '' }}</td>
+                    <td>{{ c.chapa or '' }}</td>
+                    <td>{{ c.direccion or '' }}</td>
+                    <td class="text-end {% if c.deuda_total|float > 0 %}text-danger fw-bold{% endif %}">
+                        ${{ "{:,.2f}".format(c.deuda_total|float) }}
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary btn-icon" onclick="editarCli('{{ c.id }}', '{{ c.nombre }}', '{{ c.telefono or '' }}', '{{ c.ci or '' }}', '{{ c.chapa or '' }}', '{{ c.direccion or '' }}')">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="eliminarCli('{{ c.id }}', '{{ c.nombre }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if total_pages > 1 %}
+        <nav class="py-3 px-3 border-top">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('clientes_page', page=page-1) }}">&laquo;</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page or p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('clientes_page', page=p) }}">{{ p }}</a>
+                    </li>
+                    {% elif p == page-3 or p == page+3 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('clientes_page', page=page+1) }}">&raquo;</a>
+                </li>
+            </ul>
+        </nav>
+        <p class="text-muted text-center mb-0 small">{{ total_clients }} clientes en total</p>
+        {% endif %}
+    <div id="sinClientes" class="text-center text-muted py-4 d-none">
+            <i class="bi bi-search fs-3"></i>
+            <p class="mt-2 mb-0">No se encontraron clientes</p>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="cardFormCli">
+    <div class="card-header d-flex justify-content-between align-items-center" id="cardFormCliHeader">
+        <span id="tituloFormCli"><i class="bi bi-plus-circle"></i> Crear Cliente</span>
+        <span class="badge bg-warning text-dark d-none" id="clienteSiendoEditado"><i class="bi bi-pencil"></i> Editando cliente #</span>
+    </div>
+    <div class="card-body">
+        <form method="POST" id="formCli">
+            <input type="hidden" name="action" id="cliAction" value="crear">
+            <input type="hidden" name="cliente_id" id="cliId" value="">
+            <div class="row g-3">
+                <div class="col-12 col-lg-4"><label class="form-label">Nombre *</label><input type="text" class="form-control" name="nombre" id="cliNombre" required></div>
+                <div class="col-6 col-lg-4"><label class="form-label">Telefono</label><input type="text" class="form-control" name="telefono" id="cliTelefono"></div>
+                <div class="col-6 col-lg-4"><label class="form-label">CI</label><input type="text" class="form-control" name="ci" id="cliCi"></div>
+                <div class="col-6 col-lg-4"><label class="form-label">Chapa</label><input type="text" class="form-control" name="chapa" id="cliChapa"></div>
+                <div class="col-6 col-lg-4"><label class="form-label">Direccion</label><input type="text" class="form-control" name="direccion" id="cliDireccion"></div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary" id="btnGuardarCli"><i class="bi bi-check-lg"></i> <span id="txtBtnGuardarCli">Crear Cliente</span></button>
+                <button type="button" class="btn btn-secondary" onclick="limpiarFormCli()"><i class="bi bi-x-lg"></i> Limpiar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrarClientes() {
+    const q = document.getElementById('busquedaCli').value.toLowerCase();
+    let visibles = 0;
+    document.querySelectorAll('#tablaClientes tbody tr').forEach(tr => {
+        const match = (tr.dataset.nombre || '').includes(q) || (tr.dataset.id || '').includes(q);
+        tr.classList.toggle('oculto', !match);
+        if (match) visibles++;
+    });
+    document.getElementById('contadorClientes').textContent = visibles + ' clientes';
+    document.getElementById('sinClientes').classList.toggle('d-none', visibles > 0);
+}
+function irAFormCli() {
+    document.getElementById('cardFormCli').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function limpiarFormCli() {
+    document.getElementById('cliAction').value = 'crear';
+    document.getElementById('cliId').value = '';
+    document.getElementById('cliNombre').value = '';
+    document.getElementById('cliTelefono').value = '';
+    document.getElementById('cliCi').value = '';
+    document.getElementById('cliChapa').value = '';
+    document.getElementById('cliDireccion').value = '';
+    document.getElementById('tituloFormCli').innerHTML = '<i class="bi bi-plus-circle"></i> Crear Cliente';
+    document.getElementById('txtBtnGuardarCli').textContent = 'Crear Cliente';
+    document.getElementById('clienteSiendoEditado').classList.add('d-none');
+    const btn = document.getElementById('btnGuardarCli');
+    btn.classList.remove('btn-warning');
+    btn.classList.add('btn-primary');
+    document.getElementById('cliNombre').required = true;
+}
+function nuevoCliente() {
+    limpiarFormCli();
+    irAFormCli();
+    document.getElementById('cliNombre').focus();
+}
+function editarCli(id, nombre, tel, ci, chapa, dir) {
+    document.getElementById('cliAction').value = 'editar';
+    document.getElementById('cliId').value = id;
+    document.getElementById('cliNombre').value = nombre;
+    document.getElementById('cliTelefono').value = tel;
+    document.getElementById('cliCi').value = ci;
+    document.getElementById('cliChapa').value = chapa;
+    document.getElementById('cliDireccion').value = dir;
+    document.getElementById('tituloFormCli').innerHTML = '<i class="bi bi-pencil"></i> Editar Cliente';
+    document.getElementById('txtBtnGuardarCli').textContent = 'Actualizar Cliente';
+    document.getElementById('clienteSiendoEditado').textContent = 'Editando cliente #' + id;
+    document.getElementById('clienteSiendoEditado').classList.remove('d-none');
+    const btn = document.getElementById('btnGuardarCli');
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-warning');
+    document.getElementById('cliNombre').required = true;
+    irAFormCli();
+}
+function eliminarCli(id, nombre) {
+    if (confirmar('Eliminar cliente "' + nombre + '"?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = '<input type="hidden" name="action" value="eliminar"><input type="hidden" name="cliente_id" value="' + id + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

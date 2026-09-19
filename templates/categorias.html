@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Categorias - ElectroGalindez{% endblock %}
+{% block page_title %}Gestion de Categorias{% endblock %}
+{% block content %}
+<div class="modulo-cats row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-tags"></i> Categorias Existentes</span>
+                <span class="badge bg-primary" id="contadorCats">{{ categorias|length }}</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="busquedaCat" placeholder="Buscar categoria por nombre o ID..." oninput="filtrarCats()" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" id="btnLimpiarCats" title="Limpiar" onclick="limpiarBusquedaCats()" disabled>
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="list-group list-group-flush" id="listaCats">
+                    {% for c in categorias %}
+                    {% set count = productos|selectattr('categoria_id', 'equalto', c.id)|list|length %}
+                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center cat-item" data-nombre="{{ c.nombre|lower }}" data-id="{{ c.id }}">
+                        <div class="w-100">
+                            <div class="d-flex justify-content-between align-items-center gap-2">
+                                <strong class="text-truncate">{{ c.nombre }}</strong>
+                                <span class="badge bg-secondary">{{ count }} productos</span>
+                            </div>
+                            <small class="text-muted">ID: {{ c.id }}</small>
+                        </div>
+                        <div class="d-flex gap-1 ms-2 flex-shrink-0">
+                            <button class="btn btn-sm btn-outline-primary btn-icon" title="Editar" onclick="editarCat('{{ c.id }}', '{{ c.nombre }}')"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger btn-icon" title="Eliminar" onclick="eliminarCat('{{ c.id }}', '{{ c.nombre }}', {{ count }})"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if not categorias %}
+                    <div class="text-center text-muted py-3">No hay categorias</div>
+                    {% endif %}
+                </div>
+                <div id="sinCats" class="text-center text-muted py-3 d-none">
+                    <i class="bi bi-search fs-3"></i>
+                    <p class="mt-2">No se encontraron categorias</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-plus-circle"></i> Crear / Editar Categoria</div>
+            <div class="card-body">
+                <form method="POST" id="formCat">
+                    <input type="hidden" name="action" id="catAction" value="crear">
+                    <input type="hidden" name="cat_id" id="catId" value="">
+                    <div class="mb-3">
+                        <label class="form-label">Nombre de la categoria</label>
+                        <input type="text" class="form-control form-control-lg" name="nombre" id="catNombre" required>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar</button>
+                        <button type="button" class="btn btn-secondary" onclick="limpiarCat()"><i class="bi bi-x-lg"></i> Limpiar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrarCats() {
+    const q = document.getElementById('busquedaCat').value.toLowerCase();
+    document.getElementById('btnLimpiarCats').disabled = !q;
+    const items = document.querySelectorAll('.cat-item');
+    let visibles = 0;
+    items.forEach(el => {
+        const texto = (el.dataset.nombre || '') + ' ' + (el.dataset.id || '');
+        const match = !q || texto.includes(q);
+        el.classList.toggle('oculto', !match);
+        if (match) visibles++;
+    });
+    document.getElementById('sinCats').classList.toggle('d-none', visibles > 0);
+    document.getElementById('contadorCats').textContent = visibles;
+}
+function limpiarBusquedaCats() {
+    document.getElementById('busquedaCat').value = '';
+    document.getElementById('btnLimpiarCats').disabled = true;
+    filtrarCats();
+}
+function editarCat(id, nombre) {
+    document.getElementById('catAction').value = 'editar';
+    document.getElementById('catId').value = id;
+    document.getElementById('catNombre').value = nombre;
+    document.getElementById('catNombre').focus();
+}
+function eliminarCat(id, nombre, count) {
+    if (count > 0) return alert('No se puede eliminar: tiene ' + count + ' productos asociados');
+    if (confirmar('Eliminar categoria "' + nombre + '"?')) {
+        const form = document.getElementById('formCat');
+        document.getElementById('catAction').value = 'eliminar';
+        document.getElementById('catId').value = id;
+        form.submit();
+    }
+}
+function limpiarCat() {
+    document.getElementById('catAction').value = 'crear';
+    document.getElementById('catId').value = '';
+    document.getElementById('catNombre').value = '';
+}
+</script>
+{% endblock %}

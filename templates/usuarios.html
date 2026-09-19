@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Usuarios - ElectroGalindez{% endblock %}
+{% block page_title %}Gestion de Usuarios{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-search"></i> Buscar y Filtrar</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" id="busquedaUser" placeholder="Buscar por usuario..." oninput="filtrarUsers()">
+                    </div>
+                    <div class="col-md-6">
+                        <select class="form-select" id="filtroRol" onchange="filtrarUsers()">
+                            <option value="">Todos los roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="empleado">Empleado</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-people"></i> Usuarios Registrados</div>
+            <div class="card-body">
+                <div class="list-group list-group-flush" id="listaUsers">
+                    {% for u in usuarios %}
+                    <div class="list-group-item user-item" data-username="{{ u.username|lower }}" data-rol="{{ u.rol }}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ u.username }}</strong>
+                                <span class="badge bg-{{ 'success' if u.rol == 'admin' else 'secondary' }} ms-2">{{ u.rol }}</span>
+                                {% if not u.activo %}<span class="badge bg-danger ms-1">Inactivo</span>{% endif %}
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary" onclick="editarUser('{{ u.username }}', '{{ u.rol }}', {{ 'true' if u.activo else 'false' }})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-warning" onclick="cambiarPass('{{ u.username }}')">
+                                    <i class="bi bi-key"></i>
+                                </button>
+                                <form method="POST" class="d-inline" onsubmit="return confirmar('Eliminar usuario {{ u.username }}?')">
+                                    <input type="hidden" name="action" value="eliminar">
+                                    <input type="hidden" name="username" value="{{ u.username }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white"><i class="bi bi-person-plus"></i> Crear Usuario</div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="crear">
+                    <div class="mb-3"><label class="form-label">Usuario *</label><input type="text" class="form-control" name="username" required></div>
+                    <div class="mb-3"><label class="form-label">Contrasena *</label><input type="password" class="form-control" name="password" required></div>
+                    <div class="mb-3"><label class="form-label">Rol</label>
+                        <select class="form-select" name="rol"><option value="empleado">Empleado</option><option value="admin">Admin</option></select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check-lg"></i> Crear</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4" id="cardEditar" style="display:none">
+            <div class="card-header bg-warning"><i class="bi bi-pencil"></i> Editar Usuario</div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="cambiar_rol">
+                    <input type="hidden" name="username" id="editUsername">
+                    <div class="mb-3"><label class="form-label">Usuario</label><input type="text" class="form-control" id="editUserDisplay" disabled></div>
+                    <div class="mb-3"><label class="form-label">Rol</label>
+                        <select class="form-select" name="rol" id="editRol"><option value="empleado">Empleado</option><option value="admin">Admin</option></select>
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100"><i class="bi bi-check-lg"></i> Actualizar Rol</button>
+                </form>
+                <hr>
+                <form method="POST" class="mt-2">
+                    <input type="hidden" name="action" value="cambiar_estado">
+                    <input type="hidden" name="username" id="editUsername2">
+                    <input type="hidden" name="activo" id="editActivo">
+                    <button type="submit" class="btn btn-outline-secondary w-100" id="btnEstado"><i class="bi bi-toggle-on"></i> Cambiar Estado</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card" id="cardPassword" style="display:none">
+            <div class="card-header bg-info text-white"><i class="bi bi-key"></i> Cambiar Contrasena</div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="cambiar_password">
+                    <input type="hidden" name="username" id="passUsername">
+                    <div class="mb-3"><label class="form-label">Usuario</label><input type="text" class="form-control" id="passUserDisplay" disabled></div>
+                    <div class="mb-3"><label class="form-label">Nueva Contrasena</label><input type="password" class="form-control" name="new_password" required></div>
+                    <button type="submit" class="btn btn-info w-100 text-white"><i class="bi bi-check-lg"></i> Cambiar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrarUsers() {
+    const q = document.getElementById('busquedaUser').value.toLowerCase();
+    const rol = document.getElementById('filtroRol').value;
+    let visibles = 0;
+    document.querySelectorAll('.user-item').forEach(el => {
+        const match = (el.dataset.username.includes(q)) && (!rol || el.dataset.rol === rol);
+        el.style.display = match ? '' : 'none';
+        if (match) visibles++;
+    });
+}
+function editarUser(username, rol, activo) {
+    document.getElementById('editUsername').value = username;
+    document.getElementById('editUserDisplay').value = username;
+    document.getElementById('editRol').value = rol;
+    document.getElementById('editUsername2').value = username;
+    document.getElementById('editActivo').value = activo ? 'false' : 'true';
+    document.getElementById('btnEstado').textContent = activo ? 'Desactivar' : 'Activar';
+    document.getElementById('cardEditar').style.display = '';
+}
+function cambiarPass(username) {
+    document.getElementById('passUsername').value = username;
+    document.getElementById('passUserDisplay').value = username;
+    document.getElementById('cardPassword').style.display = '';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,658 @@
+{% extends "base.html" %}
+{% block title %}Ventas - ElectroGalindez{% endblock %}
+{% block page_title %}Registrar Venta{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-person"></i> Seleccionar Cliente</span>
+                <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#modalNuevoCliente">
+                    <i class="bi bi-plus-lg"></i> Nuevo Cliente
+                </button>
+            </div>
+            <div class="card-body">
+                <select class="form-select form-select-lg" id="selectCliente" onchange="actualizarCliente()">
+                    <option value="">-- Selecciona un cliente --</option>
+                    {% for c in clientes %}
+                    <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }} (ID: {{ c.id }})</option>
+                    {% endfor %}
+                </select>
+                <input type="hidden" id="clienteId" name="cliente_id">
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-box"></i> Agregar Productos</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label">Producto</label>
+                        <select class="form-select" id="selectProducto">
+                            <option value="">-- Selecciona --</option>
+                            {% for p in productos %}
+                            <option value="{{ p.id }}" data-nombre="{{ p.nombre }}" data-precio="{{ p.precio }}" data-stock="{{ p.cantidad }}">
+                                {{ p.nombre }} (Stock: {{ p.cantidad|int }}, ${{ "{:,.2f}".format(p.precio|float) }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Cantidad</label>
+                        <input type="number" class="form-control" id="inputCantidad" value="1" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Precio</label>
+                        <input type="number" step="0.01" class="form-control" id="inputPrecio" value="0">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary w-100" onclick="agregarProducto()">
+                            <i class="bi bi-plus-lg"></i> Agregar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-cart"></i> Orden Actual</span>
+                <button class="btn btn-sm btn-outline-danger" onclick="vaciarOrden()"><i class="bi bi-trash"></i> Vaciar</button>
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table" id="tablaOrden">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th class="text-center">Cantidad</th>
+                            <th class="text-end">Precio Unit.</th>
+                            <th class="text-end">Subtotal</th>
+                            <th class="text-center">Quitar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bodyOrden"></tbody>
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="3" class="text-end fw-bold">TOTAL:</td>
+                            <td class="text-end fw-bold" id="totalOrden">$0.00</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card mb-4 sticky-top" style="top: 1rem;">
+            <div class="card-header bg-primary text-white"><i class="bi bi-credit-card"></i> Pago</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Estado del Pago</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="pago_estado" id="pagoPagado" value="pagado" checked onchange="togglePago()">
+                        <label class="btn btn-outline-success" for="pagoPagado">Pagado</label>
+                        <input type="radio" class="btn-check" name="pago_estado" id="pagoPendiente" value="pendiente" onchange="togglePago()">
+                        <label class="btn btn-outline-warning" for="pagoPendiente">Pendiente</label>
+                    </div>
+                </div>
+                <div class="mb-3" id="metodoPagoGroup">
+                    <label class="form-label">Metodo de Pago</label>
+                    <select class="form-select" id="tipoPago">
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Zelle">Zelle</option>
+                    </select>
+                </div>
+                <div class="mb-3" id="montoPagadoGroup">
+                    <label class="form-label">Monto Pagado</label>
+                    <input type="number" step="0.01" class="form-control form-control-lg" id="montoPagado" value="0">
+                </div>
+                <div class="mb-3" id="saldoPendienteGroup" style="display:none;">
+                    <label class="form-label text-danger">Saldo a pagar</label>
+                    <div class="form-control form-control-lg fw-bold text-danger" id="saldoPendiente">$0.00</div>
+                </div>
+                <hr>
+                <div class="d-grid">
+                    <button class="btn btn-success btn-lg" onclick="registrarVenta()">
+                        <i class="bi bi-check-circle"></i> Registrar Venta
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-list-ul"></i> Ventas Registradas</span>
+        <div class="d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm" style="width:280px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" id="busquedaVentas" class="form-control" placeholder="Buscar por cliente o ID..."
+                       oninput="buscarVentasRealTime()" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" id="btnLimpiarBusqueda" title="Limpiar" onclick="limpiarBusqueda()" disabled>
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <span class="badge bg-primary" id="contadorVentas">{{ total_ventas }} ventas en total</span>
+        </div>
+    </div>
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end">Pagado</th>
+                    <th>Estado</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="bodyVentas">
+                {% for v in ventas %}
+                {% set cliente_nombre = clientes_map.get(v.cliente_id, 'N/A') %}
+                {% set estado = 'Pagada' if v.pagado|float >= v.total|float else 'Pendiente' %}
+                <tr>
+                    <td class="text-muted">#{{ v.id }}</td>
+                    <td>{{ v.fecha.strftime('%d/%m/%Y %H:%M') if v.fecha else '' }}</td>
+                    <td>{{ cliente_nombre }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(v.total|float) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(v.pagado|float) }}</td>
+                    <td>
+                        {% if estado == 'Pagada' %}
+                        <span class="badge bg-success">Pagada</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary btn-icon" title="Agregar datos y descargar factura PDF" onclick="abrirModalFactura({{ v.id }})">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger btn-icon" title="Eliminar venta y reponer stock" onclick="eliminarVenta({{ v.id }})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div id="ventasVacio" class="table-empty d-none">
+            <i class="bi bi-inbox"></i>
+            No hay ventas registradas
+        </div>
+        <div id="ventasSinResultados" class="table-empty d-none">
+            <i class="bi bi-search"></i>
+            No se encontraron ventas para la busqueda
+        </div>
+        {% if total_pages > 1 %}
+        <nav class="py-3 px-3 border-top" id="paginacionVentas">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('registrar_venta', page=page-1) }}">&laquo;</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page or p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('registrar_venta', page=p) }}">{{ p }}</a>
+                    </li>
+                    {% elif p == page-3 or p == page+3 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('registrar_venta', page=page+1) }}">&raquo;</a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+<form id="formRegistrar" method="POST" style="display:none">
+    <input type="hidden" name="action" value="registrar">
+    <input type="hidden" name="cliente_id" id="formClienteId">
+    <input type="hidden" name="items" id="formItems">
+    <input type="hidden" name="total" id="formTotal">
+    <input type="hidden" name="pagado" id="formPagado">
+    <input type="hidden" name="tipo_pago" id="formTipoPago">
+</form>
+
+<form id="formEliminarVenta" method="POST" style="display:none">
+    <input type="hidden" name="action" value="eliminar">
+    <input type="hidden" name="venta_id" id="formVentaId">
+</form>
+
+<div class="modal fade" id="modalNuevoCliente" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-plus"></i> Nuevo Cliente</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Nombre *</label>
+                    <input type="text" class="form-control" id="nuevoCliNombre" placeholder="Nombre del cliente" required>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Telefono</label>
+                        <input type="text" class="form-control" id="nuevoCliTelefono" placeholder="Telefono">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">CI</label>
+                        <input type="text" class="form-control" id="nuevoCliCi" placeholder="Cedula">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Chapa</label>
+                        <input type="text" class="form-control" id="nuevoCliChapa" placeholder="Chapa">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Direccion</label>
+                        <input type="text" class="form-control" id="nuevoCliDireccion" placeholder="Direccion">
+                    </div>
+                </div>
+                <div id="nuevoCliMsg" class="mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" onclick="guardarNuevoCliente()">
+                    <i class="bi bi-check-lg"></i> Guardar y Seleccionar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDatosFactura" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-pdf"></i> Factura <span id="facturaVentaId" class="text-danger"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3 small" id="facturaResumen"></div>
+                <div class="mb-3">
+                    <label class="form-label">Observaciones</label>
+                    <textarea class="form-control" id="fObs" rows="2" placeholder="Notas para la factura"></textarea>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Vendedor</label>
+                        <input type="text" class="form-control" id="fVendedor" placeholder="Nombre del vendedor">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Telefono del Vendedor</label>
+                        <input type="text" class="form-control" id="fTelVend" placeholder="Ej: 53 5 1234567">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Chofer</label>
+                        <input type="text" class="form-control" id="fChofer" placeholder="Nombre del chofer">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Chapa del Vehiculo</label>
+                        <input type="text" class="form-control" id="fChapa" placeholder="Chapa">
+                    </div>
+                </div>
+                <div id="facturaMsg" class="mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="guardarYDescargarFactura()">
+                    <i class="bi bi-file-earmark-pdf"></i> Guardar y Descargar PDF
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let itemsOrden = [];
+let busquedaTimer = null;
+
+function buscarVentasRealTime() {
+    const input = document.getElementById('busquedaVentas');
+    document.getElementById('btnLimpiarBusqueda').disabled = !input.value;
+    clearTimeout(busquedaTimer);
+    busquedaTimer = setTimeout(function () { ejecutarBusqueda(input.value.trim()); }, 200);
+}
+
+function limpiarBusqueda() {
+    document.getElementById('busquedaVentas').value = '';
+    document.getElementById('btnLimpiarBusqueda').disabled = true;
+    clearTimeout(busquedaTimer);
+    location.reload();
+}
+
+async function ejecutarBusqueda(q) {
+    const tbody = document.getElementById('bodyVentas');
+    const nav = document.getElementById('paginacionVentas');
+    const vacio = document.getElementById('ventasVacio');
+    const sinRes = document.getElementById('ventasSinResultados');
+    const contador = document.getElementById('contadorVentas');
+
+    if (!q) { location.reload(); return; }
+
+    try {
+        const res = await fetch('/ventas/buscar?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        const rows = data.rows || [];
+        tbody.innerHTML = '';
+        const fmt = function (n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+        rows.forEach(function (v) {
+            const estadoHtml = v.estado === 'Pagada'
+                ? '<span class="badge bg-success">Pagada</span>'
+                : '<span class="badge bg-warning text-dark">Pendiente</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td class="text-muted">#' + v.id + '</td>'
+                + '<td>' + (v.fecha || '') + '</td>'
+                + '<td>' + (v.cliente || '') + '</td>'
+                + '<td class="text-end">$' + fmt(v.total) + '</td>'
+                + '<td class="text-end">$' + fmt(v.pagado) + '</td>'
+                + '<td>' + estadoHtml + '</td>'
+                + '<td class="text-center">'
+                + '<button class="btn btn-sm btn-outline-primary btn-icon" title="Agregar datos y descargar factura PDF" onclick="abrirModalFactura(' + v.id + ')"><i class="bi bi-file-earmark-pdf"></i></button> '
+                + '<button class="btn btn-sm btn-outline-danger btn-icon" title="Eliminar venta y reponer stock" onclick="eliminarVenta(' + v.id + ')"><i class="bi bi-trash"></i></button>'
+                + '</td>';
+            tbody.appendChild(tr);
+        });
+        if (nav) nav.classList.add('d-none');
+        vacio.classList.add('d-none');
+        sinRes.classList.toggle('d-none', rows.length > 0);
+        contador.textContent = rows.length + ' resultado' + (rows.length === 1 ? '' : 's');
+    } catch (err) {
+        console.error('Error en la busqueda:', err);
+        sinRes.classList.remove('d-none');
+    }
+}
+
+function actualizarCliente() {
+    const sel = document.getElementById('selectCliente');
+    document.getElementById('clienteId').value = sel.value;
+}
+
+document.getElementById('selectProducto').addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    if (opt.value) {
+        document.getElementById('inputPrecio').value = opt.dataset.precio;
+        document.getElementById('inputCantidad').max = opt.dataset.stock;
+    }
+});
+
+function agregarProducto() {
+    const sel = document.getElementById('selectProducto');
+    if (!sel.value) return alert('Selecciona un producto');
+    const opt = sel.options[sel.selectedIndex];
+    const cant = parseInt(document.getElementById('inputCantidad').value);
+    const stock = parseInt(opt.dataset.stock);
+    if (cant > stock) return alert('Stock insuficiente (' + stock + ' disponible)');
+
+    const precio = parseFloat(document.getElementById('inputPrecio').value);
+    if (isNaN(precio) || precio <= 0) return alert('Ingresa un precio valido');
+
+    const existente = itemsOrden.find(i => i.id_producto == sel.value);
+    if (existente) {
+        existente.cantidad += cant;
+        existente.precio_unitario = precio;
+        existente.subtotal = existente.cantidad * precio;
+    } else {
+        itemsOrden.push({
+            id_producto: parseInt(sel.value),
+            nombre: opt.dataset.nombre,
+            cantidad: cant,
+            precio_unitario: precio,
+            subtotal: cant * precio
+        });
+    }
+    renderOrden();
+}
+
+function quitarProducto(idx) {
+    itemsOrden.splice(idx, 1);
+    renderOrden();
+}
+
+function vaciarOrden() {
+    itemsOrden = [];
+    renderOrden();
+}
+
+function renderOrden() {
+    const tbody = document.getElementById('bodyOrden');
+    tbody.innerHTML = '';
+    let total = 0;
+    itemsOrden.forEach((item, i) => {
+        total += item.subtotal;
+        tbody.innerHTML += `<tr>
+            <td>${item.nombre}</td>
+            <td class="text-center">${item.cantidad}</td>
+            <td class="text-end">$${item.precio_unitario.toFixed(2)}</td>
+            <td class="text-end">$${item.subtotal.toFixed(2)}</td>
+            <td class="text-center"><button class="btn btn-sm btn-outline-danger" onclick="quitarProducto(${i})"><i class="bi bi-x"></i></button></td>
+        </tr>`;
+    });
+    document.getElementById('totalOrden').textContent = '$' + total.toFixed(2);
+    document.getElementById('montoPagado').value = document.getElementById('pagoPagado').checked ? total.toFixed(2) : '0';
+    document.getElementById('saldoPendiente').textContent = '$' + total.toFixed(2);
+}
+
+function togglePago() {
+    const pagado = document.getElementById('pagoPagado').checked;
+    const total = itemsOrden.reduce((s, i) => s + i.subtotal, 0);
+    document.getElementById('montoPagadoGroup').style.display = pagado ? '' : 'none';
+    document.getElementById('saldoPendienteGroup').style.display = pagado ? 'none' : '';
+    document.getElementById('saldoPendiente').textContent = '$' + total.toFixed(2);
+    document.getElementById('montoPagado').value = pagado ? total.toFixed(2) : '0';
+    document.getElementById('metodoPagoGroup').style.display = pagado ? '' : 'none';
+}
+
+function eliminarVenta(id) {
+    if (!confirm('¿Seguro que quieres eliminar la venta #' + id + '?\n'
+        + 'Se eliminara la venta registrada y se repondra el stock de los productos en el inventario.')) return;
+    document.getElementById('formVentaId').value = id;
+    document.getElementById('formEliminarVenta').submit();
+}
+
+function registrarVenta() {
+    const clienteId = document.getElementById('clienteId').value;
+    if (!clienteId) return alert('Selecciona un cliente');
+    if (itemsOrden.length === 0) return alert('Agrega al menos un producto');
+
+    const total = itemsOrden.reduce((s, i) => s + i.subtotal, 0);
+    const pagado = document.getElementById('pagoPagado').checked ? total : 0;
+    const tipoPago = document.getElementById('tipoPago').value;
+
+    document.getElementById('formClienteId').value = clienteId;
+    document.getElementById('formItems').value = JSON.stringify(itemsOrden.map(i => ({
+        id_producto: i.id_producto, nombre: i.nombre, cantidad: i.cantidad, precio_unitario: i.precio_unitario
+    })));
+    document.getElementById('formTotal').value = total;
+    document.getElementById('formPagado').value = pagado;
+    document.getElementById('formTipoPago').value = tipoPago;
+    document.getElementById('formRegistrar').submit();
+}
+
+async function descargarFactura(id) {
+    try {
+        const res = await fetch('/factura/' + id + '/descargar', { method: 'GET' });
+        const data = await res.json();
+        if (data.ok) {
+            const crearToast = () => {
+                const cont = document.createElement('div');
+                cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                cont.id = 'facturaToast';
+                cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
+                    + '<div class="d-flex"><div class="toast-body">'
+                    + '<i class="bi bi-check-circle-fill me-2"></i>Factura abierta en su visor de PDF.<br>'
+                    + '<small>Guardada en: ' + data.archivo + '</small>'
+                    + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+                document.body.appendChild(cont);
+                setTimeout(() => cont.remove(), 6000);
+            };
+            crearToast();
+        } else {
+            alert('Error: ' + (data.error || 'No se pudo generar la factura'));
+        }
+    } catch (err) {
+        alert('Error de conexion: ' + err);
+    }
+}
+
+let facturaVentaId = null;
+
+async function abrirModalFactura(id) {
+    facturaVentaId = id;
+    document.getElementById('facturaVentaId').textContent = '# ' + id;
+    document.getElementById('facturaMsg').innerHTML = '';
+    await cargarDatosFactura(id);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDatosFactura')).show();
+}
+
+async function cargarDatosFactura(id) {
+    try {
+        const res = await fetch('/api/ventas/' + id + '/datos_factura');
+        const d = await res.json();
+        if (d.error) throw new Error(d.error);
+
+        document.getElementById('fObs').value = d.venta.observaciones || '';
+        document.getElementById('fVendedor').value = d.venta.vendedor || '';
+        document.getElementById('fTelVend').value = d.venta.telefono_vendedor || '';
+        document.getElementById('fChofer').value = d.venta.chofer || '';
+        document.getElementById('fChapa').value = d.venta.chapa || '';
+
+        const v = d.venta, c = d.cliente || {};
+        document.getElementById('facturaResumen').innerHTML =
+            '<div class="col-md-4"><span class="text-muted">Cliente:</span> <strong>' + (c.nombre || 'N/A') + '</strong></div>'
+            + '<div class="col-md-4"><span class="text-muted">CI:</span> ' + (c.ci || '-') + ' &nbsp;|&nbsp; <span class="text-muted">Chapa:</span> ' + (c.chapa || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Fecha:</span> ' + v.fecha + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Total:</span> <strong>$' + formatMoney(v.total) + '</strong></div>'
+            + '<div class="col-md-4"><span class="text-muted">Pagado:</span> $' + formatMoney(v.pagado) + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Saldo:</span> <span class="' + (v.saldo > 0 ? 'text-danger' : 'text-success') + '"><strong>$' + formatMoney(v.saldo) + '</strong></span></div>'
+            + '<div class="col-md-4"><span class="text-muted">Metodo:</span> ' + (v.tipo_pago || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Usuario:</span> ' + (v.usuario || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Direccion:</span> ' + (c.direccion || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Telefono:</span> ' + (c.telefono || '-') + '</div>';
+    } catch (err) {
+        document.getElementById('facturaResumen').innerHTML = '';
+        document.getElementById('facturaMsg').innerHTML = '<div class="alert alert-danger py-2">Error al cargar datos: ' + err.message + '</div>';
+    }
+}
+
+function formatMoney(n) {
+    return Number(n || 0).toFixed(2);
+}
+
+async function guardarYDescargarFactura() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+    document.getElementById('facturaMsg').innerHTML = '';
+
+    try {
+        const payload = {
+            observaciones: document.getElementById('fObs').value,
+            vendedor: document.getElementById('fVendedor').value,
+            telefono_vendedor: document.getElementById('fTelVend').value,
+            chofer: document.getElementById('fChofer').value,
+            chapa: document.getElementById('fChapa').value
+        };
+
+        const r = await fetch('/api/ventas/' + facturaVentaId + '/factura_datos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'No se pudo guardar');
+
+        const ultimaFactura = { ventaId: facturaVentaId, archivo: null };
+        const res = await fetch('/factura/' + facturaVentaId + '/descargar', { method: 'GET' });
+        const pdf = await res.json();
+        if (!pdf.ok) throw new Error(pdf.error || 'No se pudo generar la factura');
+        ultimaFactura.archivo = pdf.archivo;
+
+        bootstrap.Modal.getInstance(document.getElementById('modalDatosFactura')).hide();
+
+        const crearToast = () => {
+            const cont = document.createElement('div');
+            cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
+                + '<div class="d-flex"><div class="toast-body">'
+                + '<i class="bi bi-check-circle-fill me-2"></i>Factura #' + facturaVentaId + ' guardada y abierta en su visor PDF.<br>'
+                + '<small>Guardada en: ' + pdf.archivo + '</small>'
+                + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+            document.body.appendChild(cont);
+            setTimeout(() => cont.remove(), 6000);
+        };
+        crearToast();
+    } catch (err) {
+        document.getElementById('facturaMsg').innerHTML = '<div class="alert alert-danger py-2">Error: ' + err.message + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> Guardar y Descargar PDF';
+    }
+}
+
+function guardarNuevoCliente() {
+    const nombre = document.getElementById('nuevoCliNombre').value.trim();
+    if (!nombre) {
+        document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">El nombre es obligatorio</div>';
+        return;
+    }
+    const payload = {
+        nombre: nombre,
+        telefono: document.getElementById('nuevoCliTelefono').value.trim(),
+        ci: document.getElementById('nuevoCliCi').value.trim(),
+        chapa: document.getElementById('nuevoCliChapa').value.trim(),
+        direccion: document.getElementById('nuevoCliDireccion').value.trim()
+    };
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+
+    fetch('/api/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            const sel = document.getElementById('selectCliente');
+            const opt = document.createElement('option');
+            opt.value = data.cliente.id;
+            opt.textContent = data.cliente.nombre + ' (ID: ' + data.cliente.id + ')';
+            sel.appendChild(opt);
+            sel.value = data.cliente.id;
+            document.getElementById('clienteId').value = data.cliente.id;
+
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalNuevoCliente'));
+            modal.hide();
+            document.getElementById('nuevoCliMsg').innerHTML = '';
+            document.getElementById('nuevoCliNombre').value = '';
+            document.getElementById('nuevoCliTelefono').value = '';
+            document.getElementById('nuevoCliCi').value = '';
+            document.getElementById('nuevoCliChapa').value = '';
+            document.getElementById('nuevoCliDireccion').value = '';
+        } else {
+            document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">' + (data.error || 'Error al crear cliente') + '</div>';
+        }
+    })
+    .catch(err => {
+        document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">Error de conexion: ' + err + '</div>';
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Guardar y Seleccionar';
+    });
+}
+</script>
+{% endblock %}

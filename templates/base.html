@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ElectroGalindez{% endblock %}</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+<body>
+{% if current_user %}
+<div id="app-loader" class="app-loader">
+    <div class="loader-content">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="loader-logo" onerror="this.style.display='none'">
+        <div class="spinner-border text-primary" role="status"></div>
+        <span class="loader-text">Cargando ElectroGalindez...</span>
+    </div>
+</div>
+<div class="d-flex">
+    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+    <nav id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="sidebar-logo" onerror="this.style.display='none'">
+            <span class="brand-text">ElectroGalindez</span>
+        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                    <i class="bi bi-speedometer2"></i><span>Dashboard</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'inventario' %}active{% endif %}" href="{{ url_for('inventario') }}">
+                    <i class="bi bi-box-seam"></i><span>Inventario</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'registrar_venta' %}active{% endif %}" href="{{ url_for('registrar_venta') }}">
+                    <i class="bi bi-cart-plus"></i><span>Ventas</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'ventas_dia' %}active{% endif %}" href="{{ url_for('ventas_dia') }}">
+                    <i class="bi bi-receipt"></i><span>Ventas del Dia</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'deudas_page' %}active{% endif %}" href="{{ url_for('deudas_page') }}">
+                    <i class="bi bi-credit-card"></i><span>Deudas</span>
+                </a>
+            </li>
+            {% if current_user and current_user.get('rol') == 'admin' %}
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'categorias_page' %}active{% endif %}" href="{{ url_for('categorias_page') }}">
+                    <i class="bi bi-tags"></i><span>Categorias</span>
+                </a>
+            </li>
+            {% endif %}
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'clientes_page' %}active{% endif %}" href="{{ url_for('clientes_page') }}">
+                    <i class="bi bi-people"></i><span>Clientes</span>
+                </a>
+            </li>
+            {% if current_user and current_user.get('rol') == 'admin' %}
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'usuarios_page' %}active{% endif %}" href="{{ url_for('usuarios_page') }}">
+                    <i class="bi bi-person-gear"></i><span>Usuarios</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'logs_page' %}active{% endif %}" href="{{ url_for('logs_page') }}">
+                    <i class="bi bi-journal-text"></i><span>Auditoria</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'historial_page' %}active{% endif %}" href="{{ url_for('historial_page') }}">
+                    <i class="bi bi-clock-history"></i><span>Historial</span>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <i class="bi bi-person-circle"></i>
+                <div>
+                    <small class="fw-bold">{{ current_user.username }}</small>
+                    <small class="text-muted d-block">{{ current_user.rol }}</small>
+                </div>
+            </div>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm w-100 mt-2">
+                <i class="bi bi-box-arrow-left"></i> Salir
+            </a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="topbar d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h4 class="mb-0">{% block page_title %}{% endblock %}</h4>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-sm btn-outline-secondary" onclick="toggleSidebar()" title="Toggle sidebar">
+                    <i class="bi bi-list"></i>
+                </button>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+</div>
+{% else %}
+<div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% block content_full %}{% endblock %}
+</div>
+{% endif %}
+
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script>
+function toggleSidebar() {
+    var sb = document.getElementById('sidebar');
+    var isMobile = window.innerWidth <= 768;
+    if (isMobile) {
+        var back = document.getElementById('sidebar-backdrop');
+        var show = sb.classList.toggle('show');
+        if (back) back.classList.toggle('show', show);
+    } else {
+        sb.classList.toggle('collapsed');
+    }
+}
+document.querySelectorAll('#sidebar .nav-link').forEach(function (link) {
+    link.addEventListener('click', function () {
+        if (window.innerWidth <= 768) {
+            var sb = document.getElementById('sidebar');
+            var back = document.getElementById('sidebar-backdrop');
+            sb.classList.remove('show');
+            if (back) back.classList.remove('show');
+        }
+    });
+});
+function confirmar(msg) {
+    return confirm(msg || 'Estas seguro?');
+}
+window.addEventListener('load', function () {
+    var loader = document.getElementById('app-loader');
+    if (loader) {
+        setTimeout(function () { loader.classList.add('hidden'); }, 150);
+    }
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Login - ElectroGalindez{% endblock %}
+{% block content_full %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-header">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="login-logo" onerror="this.style.display='none'">
+            <h2>ElectroGalindez</h2>
+            <p class="text-muted">Sistema de Contabilidad</p>
+        </div>
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" required autofocus>
+                <label for="username"><i class="bi bi-person"></i> Usuario</label>
+            </div>
+            <div class="form-floating mb-4">
+                <input type="password" class="form-control" id="password" name="password" placeholder="Contrasena" required>
+                <label for="password"><i class="bi bi-lock"></i> Contrasena</label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-login w-100">
+                <i class="bi bi-box-arrow-in-right"></i> Ingresar
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

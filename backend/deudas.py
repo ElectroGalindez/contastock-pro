@@ -14,9 +14,96 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import text
 from .db import engine
-from .clientes import update_debt
+from .clientes import update_debt, recalcular_deuda_cliente
 from backend.ventas import get_sale
 from backend import ventas
+from backend.productos import get_product
+
+
+# ======================================================
+# 💾 Registrar pago en pagos_deudas
+# ======================================================
+def registrar_pago(
+    deuda_id: int,
+    detalle_id: int,
+    producto_id: int,
+    monto_pagado: float,
+    usuario: str = None,
+    metodo_pago: str = "Efectivo",
+    observaciones: str = ""
+) -> int:
+    producto = get_product(producto_id) if producto_id else None
+    detalle = None
+    deuda = get_debt(deuda_id)
+    if deuda:
+        detalle = next((d for d in deuda.get("detalles", []) if d.get("id") == detalle_id), None)
+
+    precio = float(detalle["precio_unitario"]) if detalle else 0
+    cantidad_pagada = (float(monto_pagado) / precio) if precio else 0
+
+    with engine.begin() as conn:
+        query = text("""
+            INSERT INTO pagos_deudas
+            (deuda_id, detalle_id, producto_id, producto_nombre, cantidad, precio_unitario,
+             monto_pagado, metodo_pago, observaciones, fecha, usuario, cliente_id)
+            VALUES (:deuda_id, :detalle_id, :producto_id, :producto_nombre, :cantidad, :precio_unitario,
+                    :monto_pagado, :metodo_pago, :observaciones, :fecha, :usuario, :cliente_id)
+            RETURNING id
+        """)
+        pago_id = conn.execute(query, {
+            "deuda_id": deuda_id,
+            "detalle_id": detalle_id,
+            "producto_id": producto_id,
+            "producto_nombre": (producto or {}).get("nombre") or "",
+            "cantidad": cantidad_pagada,
+            "precio_unitario": precio,
+            "monto_pagado": monto_pagado,
+            "metodo_pago": metodo_pago,
+            "observaciones": observaciones,
+            "fecha": datetime.now(),
+            "usuario": usuario or "desconocido",
+            "cliente_id": deuda.get("cliente_id") if deuda else None,
+        }).scalar()
+    return pago_id
+
+
+# ======================================================
+# 📜 Listar pagos registrados
+# ======================================================
+def list_pagos(cliente_id: int = None) -> List[Dict[str, Any]]:
+    if cliente_id:
+        query = text("""
+            SELECT p.*, c.nombre AS cliente_nombre
+            FROM pagos_deudas p
+            LEFT JOIN clientes c ON c.id = p.cliente_id
+            WHERE p.cliente_id = :cliente_id
+            ORDER BY p.fecha DESC
+        """)
+        params = {"cliente_id": cliente_id}
+    else:
+        query = text("""
+            SELECT p.*, c.nombre AS cliente_nombre
+            FROM pagos_deudas p
+            LEFT JOIN clientes c ON c.id = p.cliente_id
+            ORDER BY p.fecha DESC
+        """)
+        params = {}
+    with engine.connect() as conn:
+        return [dict(row._mapping) for row in conn.execute(query, params)]
+
+
+# ======================================================
+# 🔍 Obtener un pago por su ID
+# ======================================================
+def get_pago(pago_id: int) -> Optional[Dict[str, Any]]:
+    query = text("""
+        SELECT p.*, c.nombre AS cliente_nombre, c.ci, c.direccion, c.telefono, c.chapa
+        FROM pagos_deudas p
+        LEFT JOIN clientes c ON c.id = p.cliente_id
+        WHERE p.id = :pago_id
+    """)
+    with engine.connect() as conn:
+        return conn.execute(query, {"pago_id": pago_id}).mappings().first()
 
 
 # ======================================================
@@ -119,7 +206,7 @@ def add_debt(
 # 💵 Registrar pago de deuda por producto
 # ======================================================
 
-def pay_debt_producto(deuda_id: int, producto_id: int, monto_pago: float, usuario=None):
+def pay_debt_producto(deuda_id: int, producto_id: int, monto_pago: float, usuario=None, metodo_pago: str = "Efectivo", observaciones: str = ""):
     deuda = get_debt(deuda_id)
     if not deuda:
         raise KeyError(f"Deuda {deuda_id} no encontrada")
@@ -160,17 +247,23 @@ def pay_debt_producto(deuda_id: int, producto_id: int, monto_pago: float, usuari
             deuda["estado"] = "pagada"
             venta_id = deuda.get("venta_id")
             if venta_id:
-                venta = get_sale(venta_id)
-                if venta:
-                    venta["pagado"] = venta["total"]
-                    from backend import ventas
-                    ventas.editar_venta_extra(
-                        sale_id=venta_id,
-                        observaciones=venta.get("observaciones"),
-                        usuario=usuario
-                    )
+                ventas.marcar_venta_pagada(sale_id=venta_id, usuario=usuario)
 
-    return {"detalle": detalle, "estado_deuda": estado_deuda}
+    # Fuera de la transacción: recalcular deuda_total del cliente sincronizada
+    # con sus deudas pendientes (el estado del detalle ya está confirmado).
+    recalcular_deuda_cliente(deuda["cliente_id"], usuario=usuario)
+
+    pago_id = registrar_pago(
+        deuda_id=deuda_id,
+        detalle_id=detalle["id"],
+        producto_id=producto_id,
+        monto_pagado=monto_pago,
+        usuario=usuario,
+        metodo_pago=metodo_pago,
+        observaciones=observaciones,
+    )
+
+    return {"detalle": detalle, "estado_deuda": estado_deuda, "pago_id": pago_id}
 
 
 # ======================================================
@@ -260,7 +353,7 @@ def list_detalle_deudas():
 # ======================================================
 def list_clientes_con_deuda():
     query = text("""
-        SELECT DISTINCT c.id, c.nombre, c.deuda_total
+        SELECT DISTINCT c.id, c.nombre, c.deuda_total, c.telefono, c.ci, c.chapa
         FROM clientes c
         JOIN deudas d ON c.id = d.cliente_id
         WHERE d.estado='pendiente' AND c.deuda_total>0
@@ -271,13 +364,6 @@ def list_clientes_con_deuda():
     
 
 from io import BytesIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.platypus import Table, TableStyle
-from reportlab.lib.utils import ImageReader
-import os
-from datetime import datetime
 
 # Contador simple global para número de deuda
 DEUDA_COUNTER = 1
@@ -289,13 +375,22 @@ def generar_factura_pago_deuda(
     usuario="desconocido",
     metodo_pago="Efectivo",
     observaciones="",
-    logo_path="assets/logo.png"
+    logo_path=None
 ):
     """
     Genera un PDF de factura de pago de deuda para un cliente,
     duplicada en la misma hoja (una copia para el cliente y otra para archivo interno).
     """
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib.utils import ImageReader
+    import os
+    from datetime import datetime
     global DEUDA_COUNTER
+    if logo_path is None:
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -394,3 +489,97 @@ def generar_factura_pago_deuda(
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
+
+
+# ======================================================
+# 📥 Exportar deudas a Excel
+# ======================================================
+def exportar_deudas_excel(cliente_id: int = None) -> bytes:
+    """Genera un archivo Excel con las deudas pendientes.
+    Si se pasa cliente_id, solo las deudas de ese cliente."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    nombres = {}
+    from .clientes import list_clients
+    for c in list_clients() or []:
+        nombres[c["id"]] = c["nombre"]
+
+    prod_map = {}
+    from .productos import map_productos
+    prod_map = map_productos() or {}
+
+    rollos = list_detalle_deudas()
+    filas = []
+    for d in rollos:
+        if str(d.get("estado", "pendiente")).lower() != "pendiente":
+            continue
+        if cliente_id and d.get("cliente_id") != cliente_id:
+            continue
+        cant = float(d.get("cantidad") or 0)
+        precio = float(d.get("precio_unitario") or 0)
+        filas.append({
+            "cliente": nombres.get(d.get("cliente_id"), "Desconocido"),
+            "deuda_id": d.get("deuda_id"),
+            "detalle_id": d.get("detalle_id"),
+            "producto": prod_map.get(d.get("producto_id"), "Producto"),
+            "cantidad": cant,
+            "precio": precio,
+            "monto": round(cant * precio, 2),
+            "fecha": str(d.get("fecha", ""))[:19],
+        })
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Deudas Pendientes"
+
+    headers = ["Cliente", "Producto", "Cantidad", "Fecha"]
+    ws.append(headers)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="C0392B")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    for f in filas:
+        ws.append([
+            f["cliente"], f["producto"], f["cantidad"], f["fecha"]
+        ])
+
+    for col, ancho in zip("ABCD", [30, 40, 12, 24]):
+        ws.column_dimensions[col].width = ancho
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ======================================================
+# 🧾 Generar comprobante de pago a partir de un pago
+# ======================================================
+def generar_comprobante_pago(pago_id: int, usuario: str = "desconocido") -> Optional[bytes]:
+    """Genera el PDF comprobante de pago usando un registro de pagos_deudas."""
+    from openpyxl import Workbook  # noqa (evitar import circular con clientes)
+    from .clientes import get_client
+
+    pago = get_pago(pago_id)
+    if not pago:
+        return None
+
+    cliente = get_client(pago.get("cliente_id")) or {}
+    productos_pagados = [{
+        "nombre": pago.get("producto_nombre") or "Producto",
+        "cantidad": float(pago.get("cantidad") or 0),
+        "precio_unitario": float(pago.get("precio_unitario") or 0),
+    }]
+
+    return generar_factura_pago_deuda(
+        cliente=cliente,
+        productos_pagados=productos_pagados,
+        deuda_id=pago.get("deuda_id"),
+        usuario=usuario,
+        metodo_pago=pago.get("metodo_pago") or "Efectivo",
+        observaciones=pago.get("observaciones") or "",
+    )

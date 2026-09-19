@@ -14,3 +14,12 @@ venv/
 data/
 *.db
 *.log
+
+# macOS
+.DS_Store
+
+# Scripts con credenciales locales / scratch
+reset_pg_password.sh
+setup_local_db.py
+facrurablanco.py
+factura_pro_2_en_1.pdf

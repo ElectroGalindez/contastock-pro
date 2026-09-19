@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+{% block title %}Deudas - ElectroGalindez{% endblock %}
+{% block page_title %}Gestion de Deudas{% endblock %}
+{% block content %}
+<div class="modulo-deudas">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div class="text-muted small">
+        <i class="bi bi-layout-text-window me-1"></i> Resumen general de deudas y pagos
+    </div>
+    <button class="btn btn-success btn-sm" onclick="descargarExcel('')">
+        <i class="bi bi-file-earmark-excel"></i> Descargar Excel (Todas)
+    </button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <span class="stat-icon bg-primary-subtle text-primary"><i class="bi bi-people"></i></span>
+                <div>
+                    <h3 class="fs-4">{{ clientes_con_deuda|length }}</h3>
+                    <small class="text-muted">Clientes con Deuda</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <span class="stat-icon bg-warning-subtle text-warning"><i class="bi bi-credit-card"></i></span>
+                <div>
+                    <h3 class="fs-4">{{ filas_general|length }}</h3>
+                    <small class="text-muted">Deudas Pendientes</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <span class="stat-icon bg-danger-subtle text-danger"><i class="bi bi-cash-stack"></i></span>
+                <div>
+                    <h3 class="fs-4">${{ "{:,.2f}".format(total_pendiente) }}</h3>
+                    <small class="text-muted">Monto Total Pendiente</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-people"></i> Clientes con Deuda</span>
+                <span class="badge bg-primary" id="contadorClientes">{{ clientes_con_deuda|length }}</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscadorCliente" class="form-control" placeholder="Buscar por nombre, ID, CI, chapa..." oninput="filtrarClientes()" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" id="btnLimpiarDeudas" title="Limpiar" onclick="limpiarBusquedaDeudas()" disabled>
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="list-group list-group-flush" id="listaClientes">
+                    {% for c in clientes_con_deuda %}
+                    <a href="{{ url_for('deudas_page', cliente_id=c.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center cliente-item {% if selected_cliente|string == c.id|string %}active{% endif %}"
+                       data-nombre="{{ c.nombre|lower }}" data-id="{{ c.id }}" data-telefono="{{ c.telefono or '' }}" data-ci="{{ c.ci or '' }}" data-chapa="{{ c.chapa or '' }}">
+                        <div class="w-100">
+                            <div class="d-flex justify-content-between align-items-center gap-2">
+                                <strong class="text-truncate">{{ c.nombre }}</strong>
+                                <span class="badge bg-danger rounded-pill cliente-deuda-badge">${{ "{:,.2f}".format(c.deuda_total|float) }}</span>
+                            </div>
+                            <small class="text-muted">ID: {{ c.id }}{% if c.ci %} &middot; CI: {{ c.ci }}{% endif %}{% if c.chapa %} &middot; {{ c.chapa }}{% endif %}</small>
+                        </div>
+                    </a>
+                    {% endfor %}
+                    {% if not clientes_con_deuda %}
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-check-circle fs-3"></i>
+                        <p class="mt-2">No hay clientes con deuda</p>
+                    </div>
+                    {% endif %}
+                </div>
+                <div id="sinResultados" class="text-center text-muted py-3 d-none">
+                    <i class="bi bi-search fs-3"></i>
+                    <p class="mt-2">No se encontraron clientes</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        {% if cliente_obj %}
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="fw-semibold"><i class="bi bi-person-circle me-2"></i>{{ cliente_obj.nombre }} <span class="opacity-75 small">(ID: {{ cliente_obj.id }})</span></span>
+                <button class="btn btn-sm btn-outline-light" onclick="descargarExcel('{{ cliente_obj.id }}')">
+                    <i class="bi bi-file-earmark-excel"></i> Excel del Cliente
+                </button>
+            </div>
+            <div class="card-body">
+                {% set total_pend_cliente = filas_pendientes|sum(attribute='monto_pendiente') %}
+                <div class="cliente-resumen-header d-flex justify-content-between align-items-center">
+                    <span class="text-muted small">Deudas pendientes de este cliente</span>
+                    <span class="badge bg-danger rounded-pill cliente-deuda-badge">${{ "{:,.2f}".format(total_pend_cliente) }}</span>
+                </div>
+                {% if filas_pendientes %}
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th class="text-end">Cant.</th>
+                            <th class="text-end">P. Unit.</th>
+                            <th class="text-end">Pendiente</th>
+                            <th>Fecha</th>
+                            <th class="text-center">Pagar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in filas_pendientes %}
+                        <tr class="fila-search fila-pendiente" data-search="{{ (f.producto or '')|lower }} {{ f.cantidad }}">
+                            <td class="fw-semibold">{{ f.producto }}</td>
+                            <td class="text-end monto-num">{{ "{:,.0f}".format(f.cantidad) }}</td>
+                            <td class="text-end monto-num">${{ "{:,.2f}".format(f.precio_unitario) }}</td>
+                            <td class="text-end fw-bold text-danger monto-num">${{ "{:,.2f}".format(f.monto_pendiente) }}</td>
+                            <td class="text-muted">{{ f.fecha }}</td>
+                            <td>
+                                <form method="POST" class="deuda-pagar-form d-flex align-items-center gap-1 flex-wrap" onsubmit="return confirmar('Registrar pago de $' + this.monto_pago.value + '?')">
+                                    <input type="hidden" name="action" value="pagar">
+                                    <input type="hidden" name="deuda_id" value="{{ f.deuda_id }}">
+                                    <input type="hidden" name="producto_id" value="{{ f.producto_id }}">
+                                    <input type="number" name="monto_pago" min="0.01" max="{{ f.monto_pendiente }}" step="0.01" value="{{ f.monto_pendiente }}"
+                                           class="form-control form-control-sm text-end monto-num" style="width:104px;" required>
+                                    <select name="metodo_pago" class="form-select form-select-sm">
+                                        <option value="Efectivo">Efectivo</option>
+                                        <option value="Zelle">Zelle</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-success btn-icon" title="Registrar pago"><i class="bi bi-check-lg"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="table-empty d-none" id="sinPendientes">
+                    <i class="bi bi-search"></i>
+                    No hay deudas de este cliente que coincidan
+                </div>
+                {% else %}
+                <div class="text-center text-success py-3">
+                    <i class="bi bi-check-circle fs-3"></i>
+                    <p class="mt-2">Este cliente no tiene deudas pendientes</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card mb-4">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-arrow-left fs-1"></i>
+                <p class="mt-2">Busca y selecciona un cliente de la izquierda para ver sus deudas</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header tabla-titulo">
+                <span class="titulo-icon bg-primary-subtle text-primary me-2"><i class="bi bi-table"></i></span>
+                Todas las Deudas Pendientes
+            </div>
+            <div class="card-body p-0 card-table-wrap">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Deuda #</th>
+                            <th>Producto</th>
+                            <th class="text-end">Cant.</th>
+                            <th class="text-end">P. Unit.</th>
+                            <th class="text-end">Monto</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in filas_general %}
+                        <tr class="fila-search fila-general" data-search="{{ (f.cliente or '')|lower }} {{ f.deuda_id }} {{ (f.producto or '')|lower }}">
+                            <td>{{ f.cliente }}</td>
+                            <td class="text-muted monto-num">{{ f.deuda_id }}</td>
+                            <td>{{ f.producto }}</td>
+                            <td class="text-end monto-num">{{ "{:,.0f}".format(f.cantidad) }}</td>
+                            <td class="text-end monto-num">${{ "{:,.2f}".format(f.precio_unitario) }}</td>
+                            <td class="text-end fw-bold monto-num">${{ "{:,.2f}".format(f.monto_total) }}</td>
+                            <td>{{ f.fecha }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if not filas_general %}
+                <div class="table-empty">
+                    <i class="bi bi-check-circle"></i>
+                    No hay deudas pendientes
+                </div>
+                {% endif %}
+                <div class="table-empty d-none" id="sinGeneral">
+                    <i class="bi bi-search"></i>
+                    No hay deudas pendientes que coincidan con la busqueda
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header tabla-titulo">
+                <span class="titulo-icon bg-success-subtle text-success me-2"><i class="bi bi-receipt"></i></span>
+                Comprobantes de Pago Registrados
+            </div>
+            <div class="card-body p-0 card-table-wrap">
+                {% if pagos_recientes %}
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Deuda #</th>
+                            <th>Producto</th>
+                            <th class="text-end">Monto Pagado</th>
+                            <th>Metodo</th>
+                            <th>Fecha</th>
+                            <th class="text-center">Comprobante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in pagos_recientes %}
+                        <tr class="fila-search fila-pago" data-search="{{ (p.cliente_nombre or 'N/A')|lower }} {{ p.deuda_id }} {{ (p.producto_nombre or '')|lower }}">
+                            <td>{{ p.cliente_nombre or 'N/A' }}</td>
+                            <td class="text-muted monto-num">{{ p.deuda_id }}</td>
+                            <td>{{ p.producto_nombre }}</td>
+                            <td class="text-end fw-bold monto-num">${{ "{:,.2f}".format(p.monto_pagado) }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ p.metodo_pago }}</span></td>
+                            <td>{{ p.fecha_str }}</td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-danger btn-icon" title="Descargar comprobante PDF" onclick="descargarComprobante({{ p.id }})">
+                                    <i class="bi bi-file-earmark-pdf"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="table-empty">
+                    <i class="bi bi-receipt"></i>
+                    Aun no se han registrado pagos con comprobante
+                </div>
+                {% endif %}
+                <div class="table-empty d-none" id="sinPagos">
+                    <i class="bi bi-search"></i>
+                    No hay comprobantes que coincidan con la busqueda
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastZona"></div>
+{% block page_content %}{% endblock %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrarClientes() {
+    const q = document.getElementById('buscadorCliente').value.toLowerCase();
+    document.getElementById('btnLimpiarDeudas').disabled = !q;
+
+    const items = document.querySelectorAll('.cliente-item');
+    let visibles = 0;
+    items.forEach(item => {
+        const texto = [
+            item.dataset.nombre || '',
+            item.dataset.id || '',
+            item.dataset.telefono || '',
+            item.dataset.ci || '',
+            item.dataset.chapa || ''
+        ].join(' ');
+        const match = !q || texto.includes(q);
+        item.classList.toggle('oculto', !match);
+        if (match) visibles++;
+    });
+    document.getElementById('sinResultados').classList.toggle('d-none', visibles > 0);
+    document.getElementById('contadorClientes').textContent = visibles;
+
+    [['fila-pendiente', 'sinPendientes'], ['fila-general', 'sinGeneral'], ['fila-pago', 'sinPagos']].forEach(pair => {
+        const filas = document.querySelectorAll('.' + pair[0]);
+        const vacio = document.getElementById(pair[1]);
+        if (!filas.length || !vacio) return;
+        let vis = 0;
+        filas.forEach(tr => {
+            const match = !q || (tr.dataset.search || '').includes(q);
+            tr.classList.toggle('oculto', !match);
+            if (match) vis++;
+        });
+        vacio.classList.toggle('d-none', vis > 0);
+    });
+}
+
+function limpiarBusquedaDeudas() {
+    document.getElementById('buscadorCliente').value = '';
+    document.getElementById('btnLimpiarDeudas').disabled = true;
+    filtrarClientes();
+}
+
+function crearToast(tipo, html) {
+    const zona = document.getElementById('toastZona');
+    const cont = document.createElement('div');
+    cont.className = 'toast show text-bg-' + (tipo === 'error' ? 'danger' : 'success') + ' align-items-center';
+    cont.innerHTML = '<div class="d-flex"><div class="toast-body">' + html
+        + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+    zona.appendChild(cont);
+    setTimeout(() => cont.remove(), 7000);
+}
+
+function descargarExcel(clienteId) {
+    const url = clienteId ? '/deudas/excel?cliente_id=' + encodeURIComponent(clienteId) : '/deudas/excel';
+    fetch(url, { method: 'GET' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                crearToast('ok', '<i class="bi bi-check-circle-fill me-2"></i>Excel abierto en su visor.<br><small>Guardado en: ' + data.archivo + '</small>');
+            } else {
+                crearToast('error', 'Error: ' + (data.error || 'No se pudo generar el Excel'));
+            }
+        })
+        .catch(err => crearToast('error', 'Error de conexion: ' + err));
+}
+
+function descargarComprobante(pagoId) {
+    fetch('/deudas/comprobante/' + pagoId + '/descargar', { method: 'GET' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                crearToast('ok', '<i class="bi bi-check-circle-fill me-2"></i>Comprobante abierto en su visor PDF.<br><small>Guardado en: ' + data.archivo + '</small>');
+            } else {
+                crearToast('error', 'Error: ' + (data.error || 'No se pudo generar el comprobante'));
+            }
+        })
+        .catch(err => crearToast('error', 'Error de conexion: ' + err));
+}
+</script>
+{% endblock %}

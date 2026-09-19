@@ -10,9 +10,9 @@ from contextlib import contextmanager
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 load_dotenv(dotenv_path)
 
-DATABASE_URL = os.getenv("NEON_DATABASE_URL")
+DATABASE_URL = os.getenv("LOCAL_DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 if not DATABASE_URL:
-    raise ValueError("No se encontró NEON_DATABASE_URL en el archivo .env")
+    raise ValueError("No se encontró LOCAL_DATABASE_URL ni NEON_DATABASE_URL en el archivo .env")
 
 # ---------------------------
 # Motor y sesión

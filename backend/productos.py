@@ -226,7 +226,7 @@ def eliminar_producto(id_producto: int, usuario: str = None):
             if eliminado:
                 # Registrar log si se proporciona usuario
                 if usuario:
-                    registrar_log(usuario, f"Eliminó producto {eliminado['nombre']} (ID {eliminado['id']})")
+                    registrar_log(usuario, "eliminar_producto", f"Eliminó producto {eliminado['nombre']} (ID {eliminado['id']})")
                 return dict(eliminado)  # Retornar como diccionario
             return None
         
@@ -241,3 +241,46 @@ def increment_stock(producto_id, cantidad):
         update_product(producto_id, nombre=producto["nombre"], cantidad=nuevo_stock, precio=producto["precio"])
     else:
         raise ValueError(f"Producto con ID {producto_id} no encontrado")
+
+
+# ---------------------------
+# EXPORTAR INVENTARIO A EXCEL
+# ---------------------------
+def exportar_inventario_excel() -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from io import BytesIO
+    from .categorias import list_categories
+
+    cat_map = {c["id"]: c["nombre"] for c in (list_categories() or [])}
+    productos = list_products()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inventario"
+
+    headers = ["Nombre", "Cantidad"]
+    ws.append(headers)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="2E75B6")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    for p in productos:
+        cant = float(p.get("cantidad") or 0)
+        ws.append([
+            p.get("nombre"),
+            cant,
+        ])
+
+    for col, ancho in zip("AB", [55, 12]):
+        ws.column_dimensions[col].width = ancho
+    for row in ws.iter_rows(min_row=2):
+        row[1].number_format = '#,##0'
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
