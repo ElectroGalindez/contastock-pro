@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 import bcrypt
 from sqlalchemy import text
-from backend.db import engine
+from backend.db import engine, ensure_datetime
 from .logs import registrar_log
 
 # ============================================
@@ -49,8 +49,10 @@ def autenticar_usuario(username, password, max_intentos=5, bloqueo_min=15):
             return None  # Usuario no existe o está desactivado
 
         # Si está bloqueado
-        if row["bloqueado_hasta"] and row["bloqueado_hasta"] > now:
-            return {"bloqueado": True, "bloqueado_hasta": row["bloqueado_hasta"].isoformat()}
+        if row["bloqueado_hasta"]:
+            bloqueado_hasta = ensure_datetime(row["bloqueado_hasta"])
+            if bloqueado_hasta > now:
+                return {"bloqueado": True, "bloqueado_hasta": bloqueado_hasta.isoformat()}
 
         # Contraseña correcta
         if bcrypt.checkpw(password.encode(), row["password"].encode()):
@@ -115,7 +117,7 @@ def listar_usuarios():
             "username": r["username"],
             "rol": r["rol"],
             "activo": r["activo"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "created_at": ensure_datetime(r["created_at"]).isoformat() if r["created_at"] else None,
             "requiere_cambio_password": r["requiere_cambio_password"]
         }
         for r in rows

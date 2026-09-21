@@ -1,0 +1,95 @@
+name: Build instaladores ContaStock Pro
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    name: macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install "setuptools<81" pyinstaller
+
+      - name: Generar .app (PyInstaller)
+        run: pyinstaller packaging/ContaStockPro.spec --clean --noconfirm
+
+      - name: Crear .dmg
+        run: |
+          hdiutil create -volname "ContaStock Pro" \
+            -srcfolder "dist/ContaStockPro.app" \
+            -ov -format UDZO \
+            "dist/ContaStockPro-macos.dmg"
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContaStockPro-macOS
+          path: dist/ContaStockPro-macos.dmg
+
+  windows:
+    name: Windows (.exe installer)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias y PyInstaller
+        shell: pwsh
+        run: python -m pip install "setuptools<81" pyinstaller
+
+      - name: Generar .exe (PyInstaller)
+        shell: pwsh
+        run: pyinstaller packaging/ContaStockPro.spec --clean --noconfirm
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: Generar instalador
+        shell: pwsh
+        run: |
+          $iscc = "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          & $iscc "packaging\windows\ContaStockPro.iss"
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContaStockPro-Windows
+          path: dist\ContaStockPro-setup.exe
+
+  release:
+    name: Crear release
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*

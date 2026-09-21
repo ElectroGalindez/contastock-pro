@@ -3,7 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ElectroGalindez{% endblock %}</title>
+    <title>{% block title %}ContaStock Pro{% endblock %}</title>
+    <meta name="description" content="ContaStock Pro - Sistema de contabilidad e inventario">
+    <meta name="theme-color" content="#2E75B6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ContaStock Pro">
+    <link rel="manifest" href="{{ url_for('manifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/icon-192.png') }}">
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
@@ -15,7 +24,7 @@
     <div class="loader-content">
         <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="loader-logo" onerror="this.style.display='none'">
         <div class="spinner-border text-primary" role="status"></div>
-        <span class="loader-text">Cargando ElectroGalindez...</span>
+        <span class="loader-text">Cargando ContaStock Pro...</span>
     </div>
 </div>
 <div class="d-flex">
@@ -23,7 +32,7 @@
     <nav id="sidebar" class="sidebar">
         <div class="sidebar-brand">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="sidebar-logo" onerror="this.style.display='none'">
-            <span class="brand-text">ElectroGalindez</span>
+            <span class="brand-text">ContaStock Pro</span>
         </div>
         <ul class="nav flex-column">
             <li class="nav-item">
@@ -141,6 +150,15 @@
 {% endif %}
 
 <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('{{ url_for("sw", _external=True) }}').catch(function (err) {
+            console.warn('Service Worker no disponible (requiere HTTPS o localhost):', err);
+        });
+    });
+}
+</script>
 <script>
 function toggleSidebar() {
     var sb = document.getElementById('sidebar');

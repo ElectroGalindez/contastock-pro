@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 from sqlalchemy import text
 import json
-from .db import engine  # Función que devuelve conexión SQLAlchemy
+from .db import engine, ensure_datetime  # Conexión SQLAlchemy portable
 
 # ---------------------------
 # Registrar un log
@@ -52,7 +52,10 @@ def listar_logs(limit=None, offset=None) -> List[Dict[str, Any]]:
         params["offset"] = offset
     with engine.connect() as conn:
         result = conn.execute(text(sql), params)
-        return [dict(row) for row in result.mappings().all()]
+        rows = [dict(row) for row in result.mappings().all()]
+    for row in rows:
+        row["fecha"] = ensure_datetime(row.get("fecha"))
+    return rows
 
 
 def contar_logs() -> int:
@@ -71,4 +74,7 @@ def obtener_logs_usuario(username: str):
     """)
     with engine.connect() as conn:
         result = conn.execute(query, {"usuario": username})
-        return [dict(row) for row in result.mappings().all()]
+        rows = [dict(row) for row in result.mappings().all()]
+    for row in rows:
+        row["fecha"] = ensure_datetime(row.get("fecha"))
+    return rows

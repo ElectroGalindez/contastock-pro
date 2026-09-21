@@ -23,3 +23,8 @@ reset_pg_password.sh
 setup_local_db.py
 facrurablanco.py
 factura_pro_2_en_1.pdf
+
+# Build (PyInstaller)
+dist/
+build/
+*.dmg

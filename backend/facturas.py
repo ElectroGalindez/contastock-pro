@@ -3,9 +3,10 @@ import os
 import json
 
 from . import ventas, clientes
+from .config import resource_path
 
 
-def generar_factura_pdf(venta, cliente, productos_vendidos, gestor_info=None, logo_path="assets/logo.png"):
+def generar_factura_pdf(venta, cliente, productos_vendidos, gestor_info=None, logo_path=None):
     """
     Genera una factura profesional en PDF mostrando todos los productos de la venta,
     duplicada en la misma hoja (para cliente y archivo interno).
@@ -25,6 +26,9 @@ def generar_factura_pdf(venta, cliente, productos_vendidos, gestor_info=None, lo
     c = canvas_module.Canvas(buffer, pagesize=letter)
     width, height = letter
     line_height = 15
+
+    if logo_path is None:
+        logo_path = str(resource_path("assets/logo.png"))
 
     # Cargar logo local
     logo = None

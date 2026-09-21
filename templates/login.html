@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Login - ElectroGalindez{% endblock %}
+{% block title %}Login - ContaStock Pro{% endblock %}
 {% block content_full %}
 <div class="login-wrapper">
     <div class="login-card">
         <div class="login-header">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="login-logo" onerror="this.style.display='none'">
-            <h2>ElectroGalindez</h2>
+            <h2>ContaStock Pro</h2>
             <p class="text-muted">Sistema de Contabilidad</p>
         </div>
         <form method="POST" action="{{ url_for('login') }}">

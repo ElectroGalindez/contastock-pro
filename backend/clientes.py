@@ -113,7 +113,8 @@ def update_debt(cliente_id: str, monto: float, usuario: str = "sistema") -> Dict
         with engine.begin() as conn:
             conn.execute(text("""
                 UPDATE clientes
-                SET deuda_total = GREATEST(deuda_total + :monto, 0)
+                SET deuda_total = CASE WHEN deuda_total + :monto < 0 THEN 0
+                                       ELSE deuda_total + :monto END
                 WHERE id = :id
             """), {"id": cliente_id, "monto": monto})
         registrar_log(usuario, "update_debt", {"id": cliente_id, "monto": monto})

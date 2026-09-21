@@ -16,13 +16,16 @@ from backend import (
     usuarios, productos, clientes, ventas,
     deudas, categorias, logs
 )
-from backend.db import get_connection
+from backend.db import (
+    get_connection, extract_month, extract_year, month_key, dm_key
+)
+from backend.config import get_secret_key
 from sqlalchemy import text
 
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = os.urandom(24)
+    app.secret_key = get_secret_key()
     app.config["SESSION_TYPE"] = "filesystem"
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
@@ -87,20 +90,20 @@ def create_app():
             anio_actual = date.today().year
 
             with get_connection() as conn:
-                total_hoy = conn.execute(text("SELECT COALESCE(SUM(total), 0) FROM ventas WHERE fecha::date = :hoy"), {"hoy": today}).scalar()
-                ventas_hoy_count = conn.execute(text("SELECT COUNT(*) FROM ventas WHERE fecha::date = :hoy"), {"hoy": today}).scalar()
-                total_mes = conn.execute(text("SELECT COALESCE(SUM(total), 0) FROM ventas WHERE EXTRACT(MONTH FROM fecha) = :m AND EXTRACT(YEAR FROM fecha) = :y"), {"m": mes_actual, "y": anio_actual}).scalar()
+                total_hoy = conn.execute(text(f"SELECT COALESCE(SUM(total), 0) FROM ventas WHERE DATE(fecha) = :hoy"), {"hoy": today}).scalar()
+                ventas_hoy_count = conn.execute(text(f"SELECT COUNT(*) FROM ventas WHERE DATE(fecha) = :hoy"), {"hoy": today}).scalar()
+                total_mes = conn.execute(text(f"SELECT COALESCE(SUM(total), 0) FROM ventas WHERE {extract_month('fecha')} = :m AND {extract_year('fecha')} = :y"), {"m": mes_actual, "y": anio_actual}).scalar()
                 total_clientes = conn.execute(text("SELECT COUNT(*) FROM clientes")).scalar()
                 total_productos = conn.execute(text("SELECT COUNT(*) FROM productos")).scalar()
                 stock_bajo = conn.execute(text("SELECT COUNT(*) FROM productos WHERE cantidad <= 5")).scalar()
                 total_deuda = conn.execute(text("SELECT COALESCE(SUM(monto_total), 0) FROM deudas WHERE estado = 'pendiente'")).scalar()
                 cli_con_deuda = conn.execute(text("SELECT COUNT(DISTINCT cliente_id) FROM deudas WHERE estado = 'pendiente'")).scalar()
 
-                dias_rows = conn.execute(text("SELECT fecha::date AS dia, SUM(total) AS total FROM ventas WHERE fecha >= :desde GROUP BY dia ORDER BY dia"), {"desde": date.today()}).fetchall()
-                ventas_por_dia = {str(r[0].strftime("%d/%m") if hasattr(r[0], "strftime") else r[0]): float(r[1]) for r in dias_rows}
+                dias_rows = conn.execute(text(f"SELECT {dm_key('fecha')} AS dia, SUM(total) AS total FROM ventas WHERE fecha >= :desde GROUP BY dia ORDER BY dia"), {"desde": date.today()}).fetchall()
+                ventas_por_dia = {str(r[0]): float(r[1]) for r in dias_rows}
 
-                mes_rows = conn.execute(text("SELECT DATE_TRUNC('month', fecha) AS mes, SUM(total) AS total FROM ventas GROUP BY mes ORDER BY mes")).fetchall()
-                ventas_por_mes = {str(r[0].strftime("%Y-%m") if hasattr(r[0], "strftime") else r[0]): float(r[1]) for r in mes_rows}
+                mes_rows = conn.execute(text(f"SELECT {month_key('fecha')} AS mes, SUM(total) AS total FROM ventas GROUP BY mes ORDER BY mes")).fetchall()
+                ventas_por_mes = {str(r[0]): float(r[1]) for r in mes_rows}
 
         except Exception as e:
             flash(f"Error al cargar datos: {e}", "danger")
@@ -770,9 +773,47 @@ def create_app():
 
         return jsonify({"ok": True, "archivo": str(ruta)})
 
+    @app.route("/manifest.json")
+    def manifest():
+        from backend.app_meta import APP_NAME, APP_DESCRIPTION
+        return jsonify({
+            "name": APP_NAME,
+            "short_name": APP_NAME,
+            "description": APP_DESCRIPTION,
+            "start_url": url_for("dashboard"),
+            "scope": "/",
+            "display": "standalone",
+            "orientation": "portrait-primary",
+            "background_color": "#1c2a3a",
+            "theme_color": "#2E75B6",
+            "icons": [
+                {"src": url_for("static", filename="icons/icon-192.png", _external=True),
+                 "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": url_for("static", filename="icons/icon-512.png", _external=True),
+                 "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": url_for("static", filename="icons/maskable-192.png", _external=True),
+                 "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+                {"src": url_for("static", filename="icons/maskable-512.png", _external=True),
+                 "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ],
+        })
+
+    @app.route("/sw.js")
+    def sw():
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.static_folder, "pwa"), "sw.js",
+                                   mimetype="application/javascript")
+
     return app
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="ContaStock Pro - Sistema de contabilidad e inventario")
+    parser.add_argument("--host", default="127.0.0.1", help="IP donde escuchar (0.0.0.0 para red local/PWA)")
+    parser.add_argument("--port", type=int, default=5555, help="Puerto del servidor")
+    parser.add_argument("--debug", action="store_true", help="Modo debug (recarga automatica)")
+    args = parser.parse_args()
+
     application = create_app()
-    application.run(host="127.0.0.1", port=5555, debug=True)
+    application.run(host=args.host, port=args.port, debug=args.debug)

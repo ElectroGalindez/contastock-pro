@@ -2,7 +2,7 @@
 from typing import  Dict, Optional
 from datetime import datetime
 from sqlalchemy import text
-from backend.db import engine
+from backend.db import engine, ensure_datetime, ilike
 from .productos import  get_product, update_product, increment_stock
 from .logs import registrar_log
 import copy
@@ -240,6 +240,7 @@ def list_sales(limit=None, offset=None):
 
         r_dict = dict(r)
         r_dict["productos_vendidos"] = productos_vendidos
+        r_dict["fecha"] = ensure_datetime(r_dict.get("fecha"))
         ventas_list.append(r_dict)
 
     return ventas_list
@@ -250,16 +251,19 @@ def count_sales():
 
 def search_sales(q: str, limit: int = 100):
     """Busca ventas por ID o nombre del cliente, devolviendo filas con cliente_nombre."""
-    query = text("""
+    query = text(f"""
         SELECT v.*, COALESCE(c.nombre, 'N/A') AS cliente_nombre
         FROM ventas v
         LEFT JOIN clientes c ON c.id = v.cliente_id
-        WHERE v.id::text ILIKE :pat OR c.nombre ILIKE :pat
+        WHERE CAST(v.id AS TEXT) {ilike()} :pat OR c.nombre {ilike()} :pat
         ORDER BY v.fecha DESC
         LIMIT :limit
     """)
     with engine.connect() as conn:
-        return [dict(r) for r in conn.execute(query, {"pat": f"%{q}%", "limit": limit}).mappings()]
+        rows = [dict(r) for r in conn.execute(query, {"pat": f"%{q}%", "limit": limit}).mappings()]
+    for r in rows:
+        r["fecha"] = ensure_datetime(r.get("fecha"))
+    return rows
 
 def get_sale(sale_id: str) -> Optional[Dict]:
     """Devuelve una venta por su ID"""
@@ -269,6 +273,7 @@ def get_sale(sale_id: str) -> Optional[Dict]:
 
     if result:
         r = dict(result)
+        r["fecha"] = ensure_datetime(r.get("fecha"))
         productos = r.get("productos_vendidos")
 
         # ✅ Solo hacer json.loads si es string
