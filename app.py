@@ -804,6 +804,12 @@ def create_app():
         return send_from_directory(os.path.join(app.static_folder, "pwa"), "sw.js",
                                    mimetype="application/javascript")
 
+    # Usuario admin por defecto para poder entrar (no pisa uno existente).
+    try:
+        usuarios.asegurar_admin("admin", "admin1234")
+    except Exception as e:
+        app.logger.warning("No se pudo asegurar el usuario admin: %s", e)
+
     return app
 
 

@@ -14,8 +14,10 @@ facturas PDF y reportes Excel. Disponible como **app de escritorio**
 - Panel general con KPIs y gráficas (ventas hoy, mes, deudas, top productos)
 - Usuarios con roles (admin / empleado), bloqueo por intentos y auditoría completa
 - Exportaciones a Excel (inventario, ventas por día, deudas)
-- Base de datos **portátil (SQLite)** que viaja con la app — sin servidores
-  (compatible también con PostgreSQL/Neon configurando `.env`)
+- Base de datos **portátil (SQLite)** que viaja con la app — sin servidores.
+  La app usa SQLite por defecto; `LOCAL_DATABASE_URL` permite apuntar a
+  PostgreSQL si hiciera falta. Neon quedó solo para traer datos a local
+  (ver *Migración desde Neon*).
 
 ## Instalación (desktop)
 
@@ -60,6 +62,21 @@ python -m pytest              # pruebas (SQLite portátil)
 Requisitos: Python 3.10+.
 Las variables de base de datos se leen de `.env` (opcional). Sin `.env`, la app
 usa **SQLite portátil** automáticamente en su carpeta de datos.
+
+Usuario inicial: **admin / admin1234** (se crea si no existe; cambiá la
+contraseña desde *Usuarios*).
+
+### Migración desde Neon
+
+Para traer los datos de Neon a la base SQLite local:
+
+```bash
+python scripts/migrar_neon_a_local.py
+```
+
+Requiere `NEON_DATABASE_URL` en `.env`. Copia todas las tablas y deja el
+usuario `admin/admin1234`. Una vez verificada la migración, borrá la conexión
+a Neon del `.env`.
 
 ## Empaquetar instaladores
 

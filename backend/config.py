@@ -60,12 +60,16 @@ def sqlite_database_url() -> str:
 
 
 def database_url() -> str:
-    """URL de la BD a usar: PostgreSQL (si está configurado) o SQLite por defecto."""
-    return (
-        os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("NEON_DATABASE_URL")
-        or sqlite_database_url()
-    )
+    """URL de la BD a usar en runtime: override local (LOCAL_DATABASE_URL) o
+    SQLite portátil por defecto. Neon ya no se selecciona automáticamente;
+    solo el script de migración (`scripts/migrar_neon_a_local.py`) lo lee."""
+    return os.getenv("LOCAL_DATABASE_URL") or sqlite_database_url()
+
+
+def neon_database_url() -> str | None:
+    """URL de Neon (solo para traer los datos a local). Se puede borrar cuando
+    la migración esté terminada."""
+    return os.getenv("NEON_DATABASE_URL")
 
 
 def get_secret_key() -> str:
