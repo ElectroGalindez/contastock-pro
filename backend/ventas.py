@@ -216,7 +216,7 @@ def actualizar_factura_datos(
 # Listar ventas
 # ----------------------------
 def list_sales(limit=None, offset=None):
-    sql = "SELECT * FROM ventas ORDER BY fecha DESC"
+    sql = "SELECT * FROM ventas ORDER BY fecha ASC, id ASC"
     params = {}
     if limit is not None:
         sql += " LIMIT :limit"

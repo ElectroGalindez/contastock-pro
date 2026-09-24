@@ -173,6 +173,7 @@ try:
 
                             st.success(f"✅ Venta registrada ID {nueva_venta['id']} - Total ${nueva_venta['total']:.2f}")
                             st.session_state["items_venta"] = []
+                            st.cache_data.clear()
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al registrar la venta: {str(e)}")
@@ -347,6 +348,7 @@ try:
             st.success(f"✅ Venta ID {venta_obj['id']} eliminada y stock restaurado.")
             st.session_state.ventas_dict.pop(venta_sel, None)
             st.session_state.ventas_count -= 1
+            st.cache_data.clear()
             st.rerun()
         except Exception as e:
             st.error(f"Error al eliminar la venta: {str(e)}")
