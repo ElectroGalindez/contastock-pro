@@ -311,6 +311,26 @@ body {
     margin-bottom: 0.25rem;
 }
 
+.login-footer {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eef2f7;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.app-version {
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+}
+
+.fecha-topbar {
+    font-variant-numeric: tabular-nums;
+}
+
 /* ========== FLASH MESSAGES ========== */
 .flash-messages {
     margin-bottom: 1rem;

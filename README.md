@@ -31,6 +31,29 @@ facturas PDF y reportes Excel. Disponible como **app de escritorio**
 2. Ejecutalo y seguí el asistente de instalación.
 3. Ajustá las credenciales del usuario inicial en `Usuarios`.
 
+#### Probar en otra PC con Windows (desde el código, sin instalador)
+Para una prueba rápida en una PC con Windows (p. ej. la del negocio) sin
+compilar nada:
+
+1. **Copiá la carpeta del proyecto** completa (incluido `.env` con la URL de
+   Neon) a la PC de Windows, o cloná el repositorio y creá `.env` con la línea
+   `NEON_DATABASE_URL=...`.
+2. En esa PC instalá **Python 3.10+** desde python.org (marcá
+   *"Add python.exe to PATH"*).
+3. Hacé doble clic en **`instalar_windows.bat`**. Él solo:
+
+   - crea el entorno virtual `.venv` e instala las dependencias;
+   - **baja los datos desde Neon** a la base SQLite local
+     (`scripts\migrar_neon_a_local.py`);
+   - abre la ventana de escritorio.
+
+4. Ingresá con **admin / admin1234**, cambiá la contraseña y verificá que
+   aparezcan clientes, ventas y deudas (se copian ~20.000 registros).
+
+> Una vez verificada la migración podés borrar `NEON_DATABASE_URL` del `.env`
+> en esa PC: la app sigue funcionando con la base local. Los datos también
+> viajan copiando la carpeta `%APPDATA%\ContaStockPro` a otra PC.
+
 Los datos se guardan en `Documentos` / carpeta de datos de usuario; se puede
 **copiar la carpeta ContaStockPro de un equipo a otro** para llevar la base de datos.
 

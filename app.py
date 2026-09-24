@@ -51,7 +51,13 @@ def create_app():
 
     @app.context_processor
     def inject_user():
-        return {"current_user": session.get("usuario")}
+        from backend.app_meta import APP_NAME, VERSION
+        return {
+            "current_user": session.get("usuario"),
+            "app_name": APP_NAME,
+            "app_version": VERSION,
+            "fecha_hoy": date.today().strftime("%d/%m/%Y"),
+        }
 
     @app.route("/")
     def index():
