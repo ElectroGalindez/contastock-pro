@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import io
-from datetime import datetime, date
+from datetime import date
 from functools import wraps
 
 from flask import (
@@ -23,12 +23,65 @@ from backend.config import get_secret_key
 from sqlalchemy import text
 
 
+def _productos_venta(valor):
+    """Normaliza productos_vendidos a una lista de dicts serializables.
+
+    El driver puede devolverla como texto JSON crudo o ya parseada, y cada
+    linea varia en cantidad/subtotal, asi que se completa lo que falte.
+    """
+    if not valor:
+        return []
+    if isinstance(valor, (str, bytes)):
+        try:
+            valor = json.loads(valor)
+        except (ValueError, TypeError):
+            return []
+    if not isinstance(valor, list):
+        return []
+
+    salida = []
+    for p in valor:
+        if not isinstance(p, dict):
+            continue
+        try:
+            cantidad = float(p.get("cantidad") or 0)
+            precio = float(p.get("precio_unitario") or 0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            subtotal = float(p.get("subtotal"))
+        except (TypeError, ValueError):
+            subtotal = cantidad * precio
+        salida.append({
+            "nombre": str(p.get("nombre") or ""),
+            "cantidad": cantidad,
+            "precio": precio,
+            "subtotal": subtotal,
+        })
+    return salida
+
+
 def create_app():
     app = Flask(__name__)
     app.secret_key = get_secret_key()
     app.config["SESSION_TYPE"] = "filesystem"
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    @app.after_request
+    def no_cache_datos(resp):
+        """Que el navegador no sirva datos viejos de clientes al volver atras.
+
+        /ventas y /clientes llevan una copia de los clientes embebida en el
+        HTML; sin esto, el boton "atras" del navegador puede mostrar nombres que
+        ya fueron editados.
+        """
+        if request.path in ("/ventas", "/clientes", "/ventas/clientes",
+                            "/clientes/buscar", "/deudas", "/deudas/buscar",
+                            "/ventas_dia"):
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+        return resp
 
     def login_required(f):
         @wraps(f)
@@ -202,6 +255,7 @@ def create_app():
 
         if request.method == "POST":
             action = request.form.get("action")
+            venta_registrada = None
             try:
                 if action == "registrar":
                     cliente_id = int(request.form.get("cliente_id"))
@@ -210,12 +264,15 @@ def create_app():
                     total = float(request.form.get("total", 0))
                     pagado = float(request.form.get("pagado", 0))
                     tipo_pago = request.form.get("tipo_pago", "Efectivo")
+                    # el gestor es opcional: la venta puede venir sin gestor
+                    gestor_id = request.form.get("gestor_id") or None
 
                     nueva = ventas.register_sale(
                         cliente_id=cliente_id, total=total, pagado=pagado,
                         usuario=session["usuario"]["username"],
-                        tipo_pago=tipo_pago, productos=items
+                        tipo_pago=tipo_pago, productos=items, gestor_id=gestor_id
                     )
+                    venta_registrada = nueva["id"]
 
                     if pagado < total:
                         saldo = total - pagado
@@ -234,20 +291,54 @@ def create_app():
                     flash("Venta eliminada y stock restaurado.", "success")
             except Exception as e:
                 flash(f"Error: {e}", "danger")
+            if action == "eliminar":
+                fi, ff, _ = ventas.normalizar_rango(
+                    request.form.get("fecha_inicio"), request.form.get("fecha_fin")
+                )
+                return redirect(url_for("registrar_venta",
+                                        fecha_inicio=fi.isoformat(),
+                                        fecha_fin=ff.isoformat()))
+            # Tras registrar, ?factura=<id> hace que la pagina abra sola la
+            # factura de la venta recien creada.
+            if venta_registrada:
+                return redirect(url_for("registrar_venta", factura=venta_registrada))
             return redirect(url_for("registrar_venta"))
 
         page = max(int(request.args.get("page", 1)), 1)
         per_page = 50
+
+        fi, ff, invertido = ventas.normalizar_rango(
+            request.args.get("fecha_inicio"), request.args.get("fecha_fin")
+        )
+        fecha_inicio, fecha_fin = fi.isoformat(), ff.isoformat()
+        if invertido:
+            flash("La fecha de inicio no puede ser mayor que la fecha final.", "warning")
+
         offset = (page - 1) * per_page
-        ventas_list = ventas.list_sales(limit=per_page, offset=offset) or []
-        total_ventas = ventas.count_sales()
+        ventas_list = ventas.list_sales(
+            limit=per_page, offset=offset,
+            fecha_inicio=fi, fecha_fin=ff,
+            orden="desc", ordenar_por="id",
+        ) or []
+        total_ventas = ventas.count_sales(fecha_inicio=fi, fecha_fin=ff)
         total_pages = (total_ventas + per_page - 1) // per_page
+        if page > total_pages and total_pages >= 1:
+            return redirect(url_for("registrar_venta", fecha_inicio=fecha_inicio,
+                                    fecha_fin=fecha_fin, page=total_pages))
         clientes_map = {c["id"]: c["nombre"] for c in clis}
 
+        clientes_selector = clientes.clientes_para_selector()
+
         return render_template("ventas.html",
-            clientes=clis, productos=prods,
+            productos=prods,
             ventas=ventas_list, clientes_map=clientes_map,
-            page=page, total_pages=total_pages, total_ventas=total_ventas
+            page=page, total_pages=total_pages, total_ventas=total_ventas,
+            fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            clientes_selector=clientes_selector,
+            gestores=clientes.listar_gestores(),
+            total_clientes=len(clientes_selector),
+            ultima_venta=ventas.ultima_venta(),
+            factura_pendiente=request.args.get("factura", type=int),
         )
 
     @app.route("/ventas/buscar")
@@ -256,8 +347,11 @@ def create_app():
         q = request.args.get("q", "").strip()
         if not q:
             return jsonify({"rows": []})
+        fi, ff, _ = ventas.normalizar_rango(
+            request.args.get("fecha_inicio"), request.args.get("fecha_fin")
+        )
         rows = []
-        for v in ventas.search_sales(q):
+        for v in ventas.search_sales(q, fecha_inicio=fi, fecha_fin=ff):
             estado = "Pagada" if float(v.get("pagado") or 0) >= float(v.get("total") or 0) else "Pendiente"
             fecha = v.get("fecha")
             fecha_str = fecha.strftime('%d/%m/%Y %H:%M') if hasattr(fecha, "strftime") else (str(fecha) if fecha else "")
@@ -265,36 +359,34 @@ def create_app():
                 "id": v.get("id"),
                 "fecha": fecha_str,
                 "cliente": v.get("cliente_nombre") or "N/A",
+                "gestor": v.get("gestor_nombre") or "",
                 "total": float(v.get("total") or 0),
                 "pagado": float(v.get("pagado") or 0),
                 "estado": estado,
+                "productos": _productos_venta(v.get("productos_vendidos")),
             })
         return jsonify({"rows": rows})
 
     @app.route("/ventas_dia", methods=["GET", "POST"])
     @login_required
     def ventas_dia():
-        vens = ventas.list_sales() or []
         clis = {c["id"]: c for c in (clientes.list_clients() or [])}
-        prods_map = {p["id"]: p for p in (productos.list_products() or [])}
 
-        fecha_inicio = request.args.get("fecha_inicio", date.today().isoformat())
-        fecha_fin = request.args.get("fecha_fin", date.today().isoformat())
+        fi, ff, invertido = ventas.normalizar_rango(
+            request.args.get("fecha_inicio"), request.args.get("fecha_fin")
+        )
+        fecha_inicio, fecha_fin = fi.isoformat(), ff.isoformat()
+        if invertido:
+            flash("La fecha de inicio no puede ser mayor que la fecha final.", "warning")
 
-        try:
-            fi = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
-            ff = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-        except ValueError:
-            fi = ff = date.today()
+        # Igual que Ventas Registradas: de la venta mas reciente a la mas vieja.
+        vens = ventas.list_sales(fecha_inicio=fi, fecha_fin=ff,
+                                 orden="desc", ordenar_por="id") or []
 
         filas = []
         for v in vens:
             vfecha = v.get("fecha")
-            if hasattr(vfecha, "date"):
-                vd = vfecha.date()
-            else:
-                continue
-            if not (fi <= vd <= ff):
+            if not hasattr(vfecha, "date"):
                 continue
             cliente = clis.get(v.get("cliente_id"), {"nombre": "Desconocido"})
             estado = "Pagada" if float(v.get("pagado", 0)) >= float(v.get("total", 0)) else "Pendiente"
@@ -341,8 +433,10 @@ def create_app():
         import subprocess
         from pathlib import Path
 
-        fecha_inicio = request.args.get("fecha_inicio", date.today().isoformat())
-        fecha_fin = request.args.get("fecha_fin", date.today().isoformat())
+        fi, ff, _ = ventas.normalizar_rango(
+            request.args.get("fecha_inicio"), request.args.get("fecha_fin")
+        )
+        fecha_inicio, fecha_fin = fi.isoformat(), ff.isoformat()
 
         data = ventas.exportar_ventas_dia_excel(fecha_inicio, fecha_fin)
 
@@ -446,6 +540,38 @@ def create_app():
             pagos_recientes=pagos_recientes,
             total_pendiente=total_pendiente,
         )
+
+    @app.route("/deudas/buscar")
+    @login_required
+    def deudas_buscar_clientes():
+        """Buscador del selector de /deudas, igual que el de /clientes.
+
+        Busca sobre TODOS los clientes, no solo los que tienen deuda, y ordena
+        el ID exacto primero. Antes la lista solo traia clientes con deuda
+        filtrada por clientes.deuda_total, una columna que se desactualiza, y
+        filtrar en el navegador no encontraba a quien no estuviera ya en ella.
+
+        El importe pendiente se recalcula desde deudas_detalle para no mostrar
+        la columna deuda_total.
+        """
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return jsonify({"rows": [], "total": 0, "mostrando": 0})
+
+        pendientes = deudas.deuda_pendiente_por_cliente()
+        filas = clientes.search_clients(q, limit=100) or []
+        return jsonify({
+            "rows": [{
+                "id": c.get("id"),
+                "nombre": c.get("nombre") or "",
+                "telefono": c.get("telefono") or "",
+                "ci": c.get("ci") or "",
+                "chapa": c.get("chapa") or "",
+                "deuda": float(pendientes.get(int(c["id"]), 0) or 0),
+            } for c in filas],
+            "total": len(filas),
+            "mostrando": len(filas),
+        })
 
     @app.route("/deudas/excel")
     @login_required
@@ -554,6 +680,10 @@ def create_app():
     @login_required
     def clientes_page():
         if request.method == "POST":
+            # El formulario manda fetch para poder avisar a las demás vistas
+            # (/ventas) del cambio. Con navegadores sin JS sigue siendo un
+            # POST normal y redirige como siempre.
+            ajax = request.headers.get("X-Requested-With") == "fetch"
             action = request.form.get("action")
             try:
                 if action == "crear":
@@ -562,8 +692,10 @@ def create_app():
                     ci = request.form.get("ci", "")
                     chapa = request.form.get("chapa", "")
                     direccion = request.form.get("direccion", "")
-                    clientes.add_client(nombre, telefono, ci, direccion, chapa, session["usuario"]["username"])
+                    nuevo = clientes.add_client(nombre, telefono, ci, direccion, chapa, session["usuario"]["username"])
                     flash(f"Cliente '{nombre}' creado.", "success")
+                    if ajax:
+                        return jsonify({"ok": True, "accion": "crear", "cliente": nuevo})
                 elif action == "editar":
                     cid = request.form.get("cliente_id")
                     nombre = request.form.get("nombre", "")
@@ -573,22 +705,181 @@ def create_app():
                     direccion = request.form.get("direccion", "")
                     clientes.update_client(cid, nombre=nombre, telefono=telefono, ci=ci, chapa=chapa, direccion=direccion, usuario=session["usuario"]["username"])
                     flash("Cliente actualizado.", "success")
+                    if ajax:
+                        return jsonify({"ok": True, "accion": "editar",
+                                        "cliente": clientes.get_client(int(cid))})
                 elif action == "eliminar":
                     cid = request.form.get("cliente_id")
                     clientes.delete_client(cid, session["usuario"]["username"])
                     flash("Cliente eliminado.", "success")
+                    if ajax:
+                        return jsonify({"ok": True, "accion": "eliminar",
+                                        "cliente": {"id": int(cid)}})
             except Exception as e:
+                if ajax:
+                    return jsonify({"ok": False, "error": str(e)}), 400
                 flash(f"Error: {e}", "danger")
             return redirect(url_for("clientes_page"))
 
         page = max(int(request.args.get("page", 1)), 1)
         per_page = 100
-        offset = (page - 1) * per_page
-        clis = clientes.list_clients(limit=per_page, offset=offset) or []
-        total_clients = clientes.count_clients()
+        q = (request.args.get("q") or "").strip()
+
+        if q:
+            # Búsqueda real sobre TODOS los clientes, no solo los de la página.
+            offset = (page - 1) * per_page
+            clis = clientes.search_clients(q, limit=per_page, offset=offset) or []
+            total_clients = clientes.count_clients_search(q)
+        else:
+            offset = (page - 1) * per_page
+            clis = clientes.list_clients(limit=per_page, offset=offset) or []
+            total_clients = clientes.count_clients()
         total_pages = (total_clients + per_page - 1) // per_page
 
-        return render_template("clientes.html", clientes=clis, page=page, total_pages=total_pages, total_clients=total_clients)
+        return render_template("clientes.html", clientes=clis, page=page,
+                               total_pages=total_pages, total_clients=total_clients,
+                               q=q)
+
+    # ======================================================
+    # 🧑‍💼 Gestores: clientes marcados para cobrar comisión
+    # ======================================================
+    @app.route("/gestores", methods=["GET", "POST"])
+    @login_required
+    def gestores_page():
+        """Panel para marcar de todos los clientes cuales son gestores.
+
+        Un gestor sigue siendo un cliente normal: es solo una bandera, asi que
+        puede comprar, deber y aparecer en el resto de la app igual que todos.
+        """
+        ajax = request.headers.get("X-Requested-With") == "fetch"
+        if request.method == "POST":
+            action = request.form.get("action")
+            try:
+                if action in ("marcar", "desmarcar"):
+                    cliente_id = request.form.get("cliente_id")
+                    cliente = clientes.set_gestor(
+                        cliente_id, action == "marcar", session["usuario"]["username"])
+                    if ajax:
+                        return jsonify({"ok": True, "cliente": cliente,
+                                        "gestor": bool(cliente.get("es_gestor"))})
+                elif action in ("marcar_varios", "desmarcar_varios"):
+                    ids = request.form.getlist("cliente_ids") or \
+                        json.loads(request.form.get("cliente_ids") or "[]")
+                    total = clientes.set_gestores_masivo(
+                        ids, action == "marcar_varios", session["usuario"]["username"])
+                    if ajax:
+                        return jsonify({"ok": True, "actualizados": total})
+            except Exception as e:
+                if ajax:
+                    return jsonify({"ok": False, "error": str(e)}), 400
+                flash(f"Error: {e}", "danger")
+            return redirect(url_for("gestores_page"))
+
+        q = (request.args.get("q") or "").strip()
+        solo_gestores = request.args.get("vista", "") == "gestores"
+        ver_todo = request.args.get("todo") == "1"
+        fi, ff, _ = ventas.normalizar_rango(
+            request.args.get("fecha_inicio"), request.args.get("fecha_fin"))
+        # por defecto el panel mira solo el dia, como /ventas. Con todo=1 se
+        # saca el rango para poder revisar el historial completo de un gestor.
+
+        if q:
+            lista = clientes.search_clients(q) or []
+        else:
+            lista = clientes.list_clients() or []
+        if solo_gestores:
+            lista = [c for c in lista if c.get("es_gestor")]
+
+        # el rango va en la URL asi el filtro sobrevive al buscador y al refresco
+        resumen = (ventas.resumen_por_gestor() if ver_todo
+                   else ventas.resumen_por_gestor(fi, ff))
+
+        # los gestores ya quedan filtrados arriba, pero el buscador propio del
+        # panel los recorre todos para que no se pierdan al escribir
+        return render_template(
+            "gestores.html", clientes=lista, q=q, solo_gestores=solo_gestores,
+            total_gestores=clientes.count_gestores(),
+            total_clientes=clientes.count_clients(),
+            resumen_gestores=resumen,
+            fecha_inicio=fi.isoformat(), fecha_fin=ff.isoformat(),
+            ver_todo=ver_todo)
+
+    @app.route("/api/gestores/<int:gestor_id>/ventas")
+    @login_required
+    def api_ventas_de_gestor(gestor_id: int):
+        """Ventas que trajo un gestor, para abrirla desde el panel.
+
+        Se pide bajo demanda y no embebido en /gestores: el panel lista todos
+        los clientes y con miles de ventas el HTML se volveria enorme.
+        """
+        gestor = clientes.get_client(gestor_id)
+        if not gestor:
+            return jsonify({"ok": False, "error": "El cliente no existe."}), 404
+        ver_todo = request.args.get("todo") == "1"
+        if ver_todo:
+            fi = ff = None
+        else:
+            fi, ff, _ = ventas.normalizar_rango(
+                request.args.get("fecha_inicio"), request.args.get("fecha_fin"))
+        return jsonify({
+            "ok": True,
+            "gestor": {"id": gestor["id"], "nombre": gestor["nombre"]},
+            "ver_todo": ver_todo,
+            "ventas": ventas.ventas_de_gestor(gestor_id,
+                                              fecha_inicio=fi, fecha_fin=ff),
+        })
+
+    @app.route("/api/gestores", methods=["POST"])
+    @login_required
+    def api_gestores():
+        """Marca o desmarca gestores (uno o varios) sin recargar la pagina."""
+        data = request.get_json(silent=True) or {}
+        ids = data.get("cliente_ids") or ([data["cliente_id"]] if data.get("cliente_id") else [])
+        es_gestor = clientes._a_bool(data.get("es_gestor"))
+        total = clientes.set_gestores_masivo(ids, es_gestor, session["usuario"]["username"])
+        return jsonify({"ok": True, "actualizados": total,
+                        "total_gestores": clientes.count_gestores()})
+
+
+    @app.route("/ventas/clientes")
+    @login_required
+    def ventas_clientes():
+        """Lista de clientes para refrescar el selector de /ventas.
+
+        El selector guarda una copia de los clientes en el navegador; este
+        endpoint permite recargarla cuando el cliente se editó en otro módulo.
+        """
+        return jsonify({"clientes": clientes.clientes_para_selector()})
+
+    @app.route("/clientes/buscar")
+    @login_required
+    def clientes_buscar():
+        """Búsqueda de clientes sobre todos, para el filtro en vivo de /clientes.
+
+        Usa el mismo criterio que el selector de /ventas, así un cliente que
+        aparece en un módulo aparece en el otro.
+        """
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return jsonify({"rows": [], "total": 0, "mostrando": 0})
+        page = max(int(request.args.get("page", 1)), 1)
+        per_page = 100
+        total = clientes.count_clients_search(q)
+        filas = clientes.search_clients(q, limit=per_page,
+                                        offset=(page - 1) * per_page) or []
+        return jsonify({
+            "rows": [{
+                "id": c.get("id"),
+                "nombre": c.get("nombre") or "",
+                "telefono": c.get("telefono") or "",
+                "ci": c.get("ci") or "",
+                "chapa": c.get("chapa") or "",
+                "direccion": c.get("direccion") or "",
+                "deuda": float(c.get("deuda_total") or 0),
+            } for c in filas],
+            "total": total,
+            "mostrando": len(filas),
+        })
 
     @app.route("/usuarios", methods=["GET", "POST"])
     @admin_required
@@ -676,6 +967,55 @@ def create_app():
         actor = session["usuario"]["username"]
         nuevo = clientes.add_client(nombre, telefono, ci, direccion, chapa, actor)
         return jsonify({"ok": True, "cliente": nuevo})
+
+    @app.route("/api/clientes/<int:cliente_id>", methods=["GET"])
+    @login_required
+    def api_obtener_cliente(cliente_id):
+        """Cliente completo, para el modal de edicion rapida de /ventas.
+
+        La copia que hay en el navegador no trae la direccion, asi que al
+        editar se pide el dato real y no se pisa nada.
+        """
+        cli = clientes.get_client(cliente_id)
+        if not cli:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        return jsonify({"ok": True, "cliente": cli})
+
+    @app.route("/api/clientes/<int:cliente_id>/deudas")
+    @login_required
+    def api_clientes_deudas(cliente_id):
+        """Deudas pendientes del cliente, para consultarlas sin salir de /ventas.
+
+        Las ya pagadas no se devuelven: en /ventas solo interesa lo que falta.
+        """
+        cli = clientes.get_client(cliente_id)
+        if not cli:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        filas = deudas.pendientes_por_cliente(cliente_id) or []
+        return jsonify({
+            "ok": True,
+            "cliente": {"id": cli["id"], "nombre": cli["nombre"]},
+            "total": len(filas),
+            "deudas": filas,
+        })
+
+    @app.route("/api/clientes/<int:cliente_id>", methods=["PUT", "POST"])
+    @login_required
+    def api_actualizar_cliente(cliente_id):
+        """Edicion rapida de cliente desde /ventas, sin salir del modulo."""
+        data = request.get_json() or {}
+        nombre = (data.get("nombre") or "").strip()
+        if not nombre:
+            return jsonify({"error": "Nombre requerido"}), 400
+        try:
+            actualizado = clientes.update_client(
+                cliente_id, nombre=nombre,
+                telefono=data.get("telefono", ""), ci=data.get("ci", ""),
+                chapa=data.get("chapa", ""), direccion=data.get("direccion", ""),
+                usuario=session["usuario"]["username"])
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        return jsonify({"ok": True, "cliente": actualizado})
 
     @app.route("/api/ventas/<int:venta_id>/datos_factura")
     @login_required

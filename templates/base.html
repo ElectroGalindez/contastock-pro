@@ -72,6 +72,11 @@
                     <i class="bi bi-people"></i><span>Clientes</span>
                 </a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'gestores_page' %}active{% endif %}" href="{{ url_for('gestores_page') }}">
+                    <i class="bi bi-person-badge"></i><span>Gestores</span>
+                </a>
+            </li>
             {% if current_user and current_user.get('rol') == 'admin' %}
             <li class="nav-item">
                 <a class="nav-link {% if request.endpoint == 'usuarios_page' %}active{% endif %}" href="{{ url_for('usuarios_page') }}">

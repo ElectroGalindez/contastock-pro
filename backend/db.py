@@ -84,6 +84,7 @@ clientes_table = Table(
     Column("chapa", String),
     Column("deuda_total", Numeric, server_default="0"),
     Column("creado_por", Text),
+    Column("es_gestor", Boolean, server_default="0"),
 )
 
 ventas_table = Table(
@@ -103,6 +104,7 @@ ventas_table = Table(
     Column("telefono_vendedor", String),
     Column("chofer", String),
     Column("chapa", String),
+    Column("gestor_id", Integer, ForeignKey("clientes.id")),
 )
 
 deudas_table = Table(
@@ -175,6 +177,21 @@ auditoria_table = Table(
 )
 
 
+def _agregar_columna_si_falta(tabla, columna, definicion_sql):
+    """Agrega una columna a una tabla existente si todavia no existe.
+
+    metadata.create_all() solo crea tablas nuevas: no agrega columnas a las que
+    ya existen, asi que sin esto las bases con datos (Neon y el SQLite local)
+    se quedarian sin la columna. Es idempotente y no borra ni modifica datos."""
+    from sqlalchemy import inspect
+
+    if columna in {c["name"] for c in inspect(engine).get_columns(tabla)}:
+        return False
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {definicion_sql}"))
+    return True
+
+
 def ensure_schema():
     """Crea las tablas que falten (solo si no existen).
     No altera tablas existentes, por lo que es seguro en producción."""
@@ -190,6 +207,14 @@ def ensure_schema():
             cursor.close()
 
     metadata.create_all(engine)
+
+    # columnas agregadas despues del primer despliegue.
+    # El default va como 'false' y no como 0: Postgres rechaza
+    # "BOOLEAN DEFAULT 0" y SQLite entiende false/true sin problema.
+    _agregar_columna_si_falta(
+        "clientes", "es_gestor", "es_gestor BOOLEAN NOT NULL DEFAULT false")
+    _agregar_columna_si_falta(
+        "ventas", "gestor_id", "gestor_id INTEGER REFERENCES clientes(id)")
 
 
 ensure_schema()
@@ -228,6 +253,20 @@ def dm_key(col: str) -> str:
 def ilike() -> str:
     """Operador de búsqueda de texto portable (ILIKE en PostgreSQL, LIKE en SQLite)."""
     return "ILIKE" if not IS_SQLITE else "LIKE"
+
+
+def date_range(col: str, inicio_param: str = "rango_desde", fin_param: str = "rango_hasta") -> str:
+    """Condición portable de rango de fechas para una columna DateTime.
+
+    El rango es inclusivo por día: espera como parámetros dos strings ISO
+    'YYYY-MM-DD' ya calculados por el llamador como [fecha_inicio 00:00:00,
+    (fecha_fin + 1 dia) 00:00:00) — intervalo semiabierto, que sí aprovecha
+    índices y no depende del formato con el que cada motor guarde la columna.
+    """
+    if IS_SQLITE:
+        return f"{col} >= :{inicio_param} AND {col} < :{fin_param}"
+    return (f"{col} >= CAST(:{inicio_param} AS TIMESTAMP) "
+            f"AND {col} < CAST(:{fin_param} AS TIMESTAMP)")
 
 
 def ensure_datetime(value):

@@ -1,26 +1,81 @@
 # backend/ventas.py
-from typing import  Dict, Optional
-from datetime import datetime
+from typing import  Any, Dict, Optional, Tuple
+from datetime import date, datetime, timedelta
 from sqlalchemy import text
-from backend.db import engine, ensure_datetime, ilike
+from backend.db import engine, ensure_datetime, ilike, date_range
 from .productos import  get_product, update_product, increment_stock
 from .logs import registrar_log
 import copy
 import json
 
 # ------------------------------
+# Rango de fechas (inclusivo por día)
+# ------------------------------
+def normalizar_rango(fecha_inicio=None, fecha_fin=None, hoy=None) -> Tuple[date, date, bool]:
+    """Normaliza un rango de fechas para las vistas de ventas.
+
+    Devuelve (fecha_inicio, fecha_fin, invertido). Ambos extremos caen en el
+    día de hoy si vienen vacíos o no son parseables. Si el rango llega
+    invertido (inicio > fin) se recorta al día de la fecha fin y se marca
+    `invertido` para que la vista pueda avisar al usuario.
+    """
+    hoy = hoy or date.today()
+
+    def _parse(valor):
+        try:
+            return datetime.strptime(str(valor)[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+
+    fi = _parse(fecha_inicio) or hoy
+    ff = _parse(fecha_fin) or hoy
+    invertido = fi > ff
+    if invertido:
+        fi = ff
+    return fi, ff, invertido
+
+
+def rango_params(fi: date, ff: date) -> Dict[str, str]:
+    """Parámetros para date_range(): intervalo semiabierto [fi 00:00, ff+1 00:00)."""
+    return {
+        "rango_desde": f"{fi.isoformat()} 00:00:00",
+        "rango_hasta": f"{(ff + timedelta(days=1)).isoformat()} 00:00:00",
+    }
+
+
+def _filtro_rango(fi, ff, alias: str = "") -> Tuple[str, Dict[str, str]]:
+    """Devuelve (fragmento WHERE, params) para filtrar por el rango dado."""
+    col = f"{alias}.fecha" if alias else "fecha"
+    return f" WHERE {date_range(col)}", rango_params(fi, ff)
+
+# ------------------------------
 # Registrar venta
 # ----------------------------
-def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None):
+def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None, gestor_id=None):
     """
     Registra una venta, descuenta del inventario,
     guarda productos vendidos como JSON y calcula saldo automáticamente.
+
+    gestor_id es opcional: es el cliente marcado como gestor que trajo la
+    venta. Como los gestores tambien son clientes, se guarda en clientes y la
+    venta solo apunta a ese id.
     """
 
     fecha = datetime.now()
     total = float(total)
     pagado = float(pagado)
     saldo = total - pagado
+
+    # el gestor tiene que existir: si no, se avisa en vez de guardar una venta
+    # colgada a un id que no esta
+    gestor_id = int(gestor_id) if gestor_id not in (None, "", "0") else None
+    if gestor_id is not None:
+        with engine.connect() as conn:
+            existe = conn.execute(
+                text("SELECT COUNT(*) FROM clientes WHERE id = :i"),
+                {"i": gestor_id}).scalar()
+        if not existe:
+            raise ValueError("El gestor seleccionado no existe.")
 
     productos_data = []
 
@@ -69,9 +124,9 @@ def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None)
         # ----------------------------
         query_venta = text("""
             INSERT INTO ventas 
-            (cliente_id, total, pagado, saldo, usuario, tipo_pago, fecha, productos_vendidos)
+            (cliente_id, total, pagado, saldo, usuario, tipo_pago, fecha, productos_vendidos, gestor_id)
             VALUES 
-            (:cliente_id, :total, :pagado, :saldo, :usuario, :tipo_pago, :fecha, :productos_vendidos)
+            (:cliente_id, :total, :pagado, :saldo, :usuario, :tipo_pago, :fecha, :productos_vendidos, :gestor_id)
             RETURNING id
         """)
 
@@ -83,7 +138,8 @@ def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None)
             "usuario": usuario,
             "tipo_pago": tipo_pago,
             "fecha": fecha,
-            "productos_vendidos": json.dumps(productos_data)
+            "productos_vendidos": json.dumps(productos_data),
+            "gestor_id": gestor_id
         }).scalar()
 
         # ----------------------------
@@ -97,7 +153,8 @@ def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None)
                 "cliente_id": cliente_id,
                 "total": total,
                 "pagado": pagado,
-                "saldo": saldo
+                "saldo": saldo,
+                "gestor_id": gestor_id
             }
         )
 
@@ -110,7 +167,8 @@ def register_sale(cliente_id, total, pagado, usuario, tipo_pago, productos=None)
         "usuario": usuario,
         "tipo_pago": tipo_pago,
         "fecha": fecha,
-        "productos_vendidos": productos_data
+        "productos_vendidos": productos_data,
+        "gestor_id": gestor_id
     }
 
 
@@ -215,9 +273,24 @@ def actualizar_factura_datos(
 # ----------------------------
 # Listar ventas
 # ----------------------------
-def list_sales(limit=None, offset=None):
-    sql = "SELECT * FROM ventas ORDER BY fecha ASC, id ASC"
-    params = {}
+def list_sales(limit=None, offset=None, fecha_inicio: Optional[date] = None,
+               fecha_fin: Optional[date] = None, orden: str = "asc",
+               ordenar_por: str = "fecha"):
+    """Lista ventas, opcionalmente acotadas a un rango de fechas (inclusivo).
+
+    `ordenar_por` acepta 'fecha' (por defecto) o 'id'; `orden` acepta 'asc'
+    o 'desc'. La tabla de ventas registradas usa id/desc para que lo último
+    registrado quede arriba.
+    """
+    where, params = "", {}
+    if fecha_inicio and fecha_fin:
+        where, params = _filtro_rango(fecha_inicio, fecha_fin)
+
+    dir_sql = "DESC" if str(orden).lower().startswith("desc") else "ASC"
+    if str(ordenar_por).lower() == "id":
+        sql = f"SELECT * FROM ventas{where} ORDER BY id {dir_sql}"
+    else:
+        sql = f"SELECT * FROM ventas{where} ORDER BY fecha {dir_sql}, id {dir_sql}"
     if limit is not None:
         sql += " LIMIT :limit"
         params["limit"] = limit
@@ -245,25 +318,154 @@ def list_sales(limit=None, offset=None):
 
     return ventas_list
 
-def count_sales():
+def count_sales(fecha_inicio: Optional[date] = None, fecha_fin: Optional[date] = None):
+    """Cuenta ventas, opcionalmente acotadas al mismo rango que list_sales()."""
+    where, params = "", {}
+    if fecha_inicio and fecha_fin:
+        where, params = _filtro_rango(fecha_inicio, fecha_fin)
     with engine.connect() as conn:
-        return conn.execute(text("SELECT COUNT(*) FROM ventas")).scalar()
+        return conn.execute(text(f"SELECT COUNT(*) FROM ventas{where}"), params).scalar()
 
-def search_sales(q: str, limit: int = 100):
-    """Busca ventas por ID o nombre del cliente, devolviendo filas con cliente_nombre."""
+def search_sales(q: str, limit: int = 100, fecha_inicio: Optional[date] = None,
+                 fecha_fin: Optional[date] = None):
+    """Busca ventas por ID o nombre del cliente, devolviendo filas con cliente_nombre.
+
+    Si se pasan fechas, la búsqueda se acota al mismo rango que la tabla."""
+    where = ""
+    params: Dict[str, object] = {"pat": f"%{q}%", "limit": limit}
+    if fecha_inicio and fecha_fin:
+        extra, extra_params = _filtro_rango(fecha_inicio, fecha_fin, alias="v")
+        where = extra.replace(" WHERE ", " AND ")
+        params.update(extra_params)
+
     query = text(f"""
-        SELECT v.*, COALESCE(c.nombre, 'N/A') AS cliente_nombre
+        SELECT v.*, COALESCE(c.nombre, 'N/A') AS cliente_nombre,
+               COALESCE(g.nombre, '') AS gestor_nombre
         FROM ventas v
         LEFT JOIN clientes c ON c.id = v.cliente_id
-        WHERE CAST(v.id AS TEXT) {ilike()} :pat OR c.nombre {ilike()} :pat
-        ORDER BY v.fecha DESC
+        LEFT JOIN clientes g ON g.id = v.gestor_id
+        WHERE (CAST(v.id AS TEXT) {ilike()} :pat OR c.nombre {ilike()} :pat){where}
+        ORDER BY v.id DESC
         LIMIT :limit
     """)
     with engine.connect() as conn:
-        rows = [dict(r) for r in conn.execute(query, {"pat": f"%{q}%", "limit": limit}).mappings()]
+        rows = [dict(r) for r in conn.execute(query, params).mappings()]
     for r in rows:
         r["fecha"] = ensure_datetime(r.get("fecha"))
     return rows
+
+
+def resumen_por_gestor(fecha_inicio: Optional[date] = None,
+                       fecha_fin: Optional[date] = None) -> Dict[int, Dict[str, Any]]:
+    """Totales de cada gestor: cuantas ventas trajo, cuanto vendio y cuanto quedo
+    pendiente.
+
+    Se agrupa en SQL y no contando en Python porque el panel lista todos los
+    clientes: con miles de ventas, traerlas todas para sumar en memoria seria
+    lento. Solo devuelve los gestores que trajeron al menos una venta.
+
+    Sin rango cuenta todo el historial; con rango, solo lo del periodo, para que
+    los totales de la fila no contradigan a las ventas listadas abajo.
+    """
+    where, params = "", {"rango_desde": None, "rango_hasta": None}
+    if fecha_inicio and fecha_fin:
+        extra, params = _filtro_rango(fecha_inicio, fecha_fin, alias="v")
+        where = extra.replace(" WHERE ", " AND ")
+    sql = f"""
+        SELECT v.gestor_id,
+               COUNT(*) AS ventas,
+               COALESCE(SUM(v.total), 0) AS total,
+               COALESCE(SUM(v.pagado), 0) AS pagado,
+               COALESCE(SUM(v.total - v.pagado), 0) AS pendiente
+        FROM ventas v
+        WHERE v.gestor_id IS NOT NULL{where}
+        GROUP BY v.gestor_id
+    """
+    with engine.connect() as conn:
+        filas = conn.execute(text(sql), params).mappings().all()
+    return {r["gestor_id"]: {
+        "ventas": int(r["ventas"]),
+        "total": float(r["total"] or 0),
+        "pagado": float(r["pagado"] or 0),
+        "pendiente": float(r["pendiente"] or 0),
+    } for r in filas}
+
+
+def ventas_de_gestor(gestor_id, limit: int = 200, fecha_inicio: Optional[date] = None,
+                     fecha_fin: Optional[date] = None) -> list[Dict[str, Any]]:
+    """Ventas que trajo un gestor, con el cliente que las compro.
+
+    El pendiente se recalcula con total - pagado y no con ventas.saldo, porque
+    esa columna se escribio una vez y hay ventas viejas con el valor sin
+    actualizar.
+
+    Sin rango devuelve todo el historial del gestor; con rango, solo el periodo.
+
+    El orden es por id ascendente, no por fecha: el id es lo unico que no se
+    puede editar, asi que es el orden real en que se hicieron las ventas. La
+    fecha se corrige a mano cuando se carga una venta de otro dia y, si se
+    ordenara por ella, las ventas se mezclarian.
+
+    El LIMIT se aplica sobre las mas recientes y recien ahi se ordenan de mayor
+    a menor. Ponerlo sobre el orden final, con un gestor que tiene mas de 200
+    ventas, mostraria las 200 primeras y las nuevas ni aparecerian.
+    """
+    gestor_id = int(gestor_id)
+    where, params = "", {"g": gestor_id, "limite": int(limit)}
+    if fecha_inicio and fecha_fin:
+        extra, rango = _filtro_rango(fecha_inicio, fecha_fin, alias="v")
+        where = extra.replace(" WHERE ", " AND ")
+        params.update(rango)
+    sql = f"""
+        SELECT id, fecha, total, pagado, tipo_pago, cliente_nombre, pendiente
+        FROM (
+            SELECT v.id, v.fecha, v.total, v.pagado, v.tipo_pago,
+                   COALESCE(c.nombre, 'N/A') AS cliente_nombre,
+                   v.total - v.pagado AS pendiente
+            FROM ventas v
+            LEFT JOIN clientes c ON c.id = v.cliente_id
+            WHERE v.gestor_id = :g{where}
+            ORDER BY v.id DESC
+            LIMIT :limite
+        ) recientes
+        ORDER BY id ASC
+    """
+    with engine.connect() as conn:
+        filas = conn.execute(text(sql), params).mappings().all()
+    out = []
+    for r in filas:
+        fila = dict(r)
+        fila["fecha"] = ensure_datetime(fila.get("fecha"))
+        fila["total"] = float(fila.get("total") or 0)
+        fila["pagado"] = float(fila.get("pagado") or 0)
+        fila["pendiente"] = float(fila.get("pendiente") or 0)
+        fila["estado"] = "Pagada" if fila["pagado"] >= fila["total"] else "Pendiente"
+        out.append(fila)
+    return out
+
+
+def ultima_venta() -> Optional[Dict]:
+    """Devuelve la venta más recientemente registrada (mayor ID), con el
+    nombre del cliente. Se usa para el botón de factura de la última venta."""
+    query = text("""
+        SELECT v.id, v.fecha, v.total, v.pagado, v.saldo, v.tipo_pago,
+               v.gestor_id,
+               COALESCE(c.nombre, 'N/A') AS cliente_nombre,
+               g.nombre AS gestor_nombre
+        FROM ventas v
+        LEFT JOIN clientes c ON c.id = v.cliente_id
+        LEFT JOIN clientes g ON g.id = v.gestor_id
+        ORDER BY v.id DESC
+        LIMIT 1
+    """)
+    with engine.connect() as conn:
+        r = conn.execute(query).mappings().first()
+    if not r:
+        return None
+    r = dict(r)
+    r["fecha"] = ensure_datetime(r.get("fecha"))
+    return r
+
 
 def get_sale(sale_id: str) -> Optional[Dict]:
     """Devuelve una venta por su ID"""
@@ -323,18 +525,11 @@ def exportar_ventas_dia_excel(fecha_inicio=None, fecha_fin=None) -> bytes:
     """Genera un Excel con las ventas del rango de fechas dado (inclusive)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
-    from datetime import date as _date
 
-    if fecha_inicio:
-        fi = _date.fromisoformat(fecha_inicio[:10])
-    else:
-        fi = _date.today()
-    if fecha_fin:
-        ff = _date.fromisoformat(fecha_fin[:10])
-    else:
-        ff = _date.today()
-
-    vens = list_sales() or []
+    fi, ff, _ = normalizar_rango(fecha_inicio, fecha_fin)
+    # Mismo orden que la tabla en pantalla: por id de venta, de mayor a menor.
+    vens = list_sales(fecha_inicio=fi, fecha_fin=ff,
+                      orden="desc", ordenar_por="id") or []
 
     from .clientes import list_clients
     clis = {c["id"]: c["nombre"] for c in (list_clients() or [])}
@@ -342,11 +537,7 @@ def exportar_ventas_dia_excel(fecha_inicio=None, fecha_fin=None) -> bytes:
     filas = []
     for v in vens:
         vfecha = v.get("fecha")
-        if hasattr(vfecha, "date"):
-            vd = vfecha.date()
-        else:
-            continue
-        if not (fi <= vd <= ff):
+        if not hasattr(vfecha, "date"):
             continue
         cliente = clis.get(v.get("cliente_id"), "Desconocido")
         estado = "Pagada" if float(v.get("pagado", 0)) >= float(v.get("total", 0)) else "Pendiente"

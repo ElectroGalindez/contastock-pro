@@ -8,7 +8,7 @@
             <div class="col-md-5">
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" class="form-control" id="busquedaCli" placeholder="Buscar por nombre o ID..." oninput="filtrarClientes()" autocomplete="off">
+                    <input type="text" class="form-control" id="busquedaCli" placeholder="Buscar por nombre, ID, telefono, CI o chapa..." oninput="filtrarClientes()" autocomplete="off">
                 </div>
             </div>
             <div class="col-md-2">
@@ -34,6 +34,7 @@
                     <th>CI</th>
                     <th>Chapa</th>
                     <th>Direccion</th>
+                    <th class="text-center">Gestor</th>
                     <th class="text-end">Deuda</th>
                     <th class="text-center">Acciones</th>
                 </tr>
@@ -47,6 +48,13 @@
                     <td>{{ c.ci or '' }}</td>
                     <td>{{ c.chapa or '' }}</td>
                     <td>{{ c.direccion or '' }}</td>
+                    <td class="text-center">
+                        {% if c.es_gestor %}
+                        <span class="badge bg-warning text-dark" title="Cliente marcado como gestor">
+                            <i class="bi bi-person-badge-fill"></i> Gestor
+                        </span>
+                        {% endif %}
+                    </td>
                     <td class="text-end {% if c.deuda_total|float > 0 %}text-danger fw-bold{% endif %}">
                         ${{ "{:,.2f}".format(c.deuda_total|float) }}
                     </td>
@@ -82,7 +90,7 @@
                 </li>
             </ul>
         </nav>
-        <p class="text-muted text-center mb-0 small">{{ total_clients }} clientes en total</p>
+        <p class="text-muted text-center mb-0 small" id="pieClientes">{{ total_clients }} clientes en total</p>
         {% endif %}
     <div id="sinClientes" class="text-center text-muted py-4 d-none">
             <i class="bi bi-search fs-3"></i>
@@ -100,6 +108,7 @@
         <form method="POST" id="formCli">
             <input type="hidden" name="action" id="cliAction" value="crear">
             <input type="hidden" name="cliente_id" id="cliId" value="">
+            <div class="alert py-2 d-none" id="cliMsg"></div>
             <div class="row g-3">
                 <div class="col-12 col-lg-4"><label class="form-label">Nombre *</label><input type="text" class="form-control" name="nombre" id="cliNombre" required></div>
                 <div class="col-6 col-lg-4"><label class="form-label">Telefono</label><input type="text" class="form-control" name="telefono" id="cliTelefono"></div>
@@ -117,17 +126,81 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/clientes-sync.js') }}"></script>
 <script>
+let busquedaCliTimer = null;
+
+function money(n) {
+    return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function esc(valor) {
+    const d = document.createElement('div');
+    d.textContent = valor == null ? '' : String(valor);
+    return d.innerHTML;
+}
+
+function filaCliente(c) {
+    const tr = document.createElement('tr');
+    const conDeuda = Number(c.deuda) > 0;
+    tr.innerHTML =
+        '<td class="text-muted">' + c.id + '</td>'
+        + '<td class="fw-semibold">' + esc(c.nombre) + '</td>'
+        + '<td>' + esc(c.telefono) + '</td>'
+        + '<td>' + esc(c.ci) + '</td>'
+        + '<td>' + esc(c.chapa) + '</td>'
+        + '<td>' + esc(c.direccion) + '</td>'
+        + '<td class="text-end' + (conDeuda ? ' text-danger fw-bold' : '') + '">' + money(c.deuda) + '</td>'
+        + '<td class="text-center">'
+        + '<button class="btn btn-sm btn-outline-primary btn-icon" title="Editar"'
+        + ' onclick="editarCli(\'' + c.id + '\', \'' + esc(c.nombre).replace(/'/g, '&#39;') + '\', \'' + esc(c.telefono).replace(/'/g, '&#39;') + '\', \'' + esc(c.ci).replace(/'/g, '&#39;') + '\', \'' + esc(c.chapa).replace(/'/g, '&#39;') + '\', \'' + esc(c.direccion).replace(/'/g, '&#39;') + '\')">'
+        + '<i class="bi bi-pencil"></i></button> '
+        + '<button class="btn btn-sm btn-outline-danger btn-icon" title="Eliminar"'
+        + ' onclick="eliminarCli(\'' + c.id + '\', \'' + esc(c.nombre).replace(/'/g, '&#39;') + '\')"><i class="bi bi-trash"></i></button>'
+        + '</td>';
+    return tr;
+}
+
+// Antes esto filtraba solo las 100 filas de la página actual, así que un
+// cliente de la página 3 no aparecía al buscarlo aunque estuviera en /ventas.
+// Ahora consulta al servidor, que busca sobre TODOS los clientes.
 function filtrarClientes() {
-    const q = document.getElementById('busquedaCli').value.toLowerCase();
-    let visibles = 0;
-    document.querySelectorAll('#tablaClientes tbody tr').forEach(tr => {
-        const match = (tr.dataset.nombre || '').includes(q) || (tr.dataset.id || '').includes(q);
-        tr.classList.toggle('oculto', !match);
-        if (match) visibles++;
-    });
-    document.getElementById('contadorClientes').textContent = visibles + ' clientes';
-    document.getElementById('sinClientes').classList.toggle('d-none', visibles > 0);
+    clearTimeout(busquedaCliTimer);
+    busquedaCliTimer = setTimeout(ejecutarBusquedaCli, 220);
+}
+
+async function ejecutarBusquedaCli() {
+    const q = document.getElementById('busquedaCli').value.trim();
+    const tbody = document.querySelector('#tablaClientes tbody');
+    const sinCli = document.getElementById('sinClientes');
+
+    if (!q) {
+        location.reload();
+        return;
+    }
+
+    try {
+        const res = await fetch('/clientes/buscar?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        const rows = data.rows || [];
+        tbody.innerHTML = '';
+        rows.forEach(function (c) { tbody.appendChild(filaCliente(c)); });
+        const total = data.total || 0;
+        const mostrando = data.mostrando == null ? rows.length : data.mostrando;
+        document.getElementById('contadorClientes').textContent = total + (total === 1 ? ' cliente' : ' clientes');
+        sinCli.classList.toggle('d-none', rows.length > 0);
+        const pag = document.querySelector('#tablaClientes').closest('.card').querySelector('nav.pagination, .pagination');
+        if (pag) pag.classList.add('d-none');
+        const pie = document.getElementById('pieClientes');
+        if (pie) {
+            pie.classList.remove('d-none');
+            pie.textContent = mostrando < total
+                ? 'Mostrando ' + mostrando + ' de ' + total + ' coincidencias (el ID exacto va primero)'
+                : total + (total === 1 ? ' coincidencia' : ' coincidencias');
+        }
+    } catch (err) {
+        console.error('Error en la busqueda de clientes:', err);
+    }
 }
 function irAFormCli() {
     document.getElementById('cardFormCli').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -172,13 +245,102 @@ function editarCli(id, nombre, tel, ci, chapa, dir) {
     irAFormCli();
 }
 function eliminarCli(id, nombre) {
-    if (confirmar('Eliminar cliente "' + nombre + '"?')) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.innerHTML = '<input type="hidden" name="action" value="eliminar"><input type="hidden" name="cliente_id" value="' + id + '">';
-        document.body.appendChild(form);
-        form.submit();
+    if (!confirmar('Eliminar cliente "' + nombre + '"?')) return;
+    const cuerpo = new URLSearchParams({ action: 'eliminar', cliente_id: id });
+    fetch('/clientes', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'fetch' },
+        body: cuerpo
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            // Quitar la fila de la vista actual.
+            const fila = document.querySelector('#tablaClientes tbody tr[data-id="' + id + '"]');
+            if (fila) fila.remove();
+            // Avisar a /ventas y a las demás pestañas.
+            if (window.ClientesSync) ClientesSync.publicar('eliminar', { id: Number(id) });
+            if (window.ClientesSync) ClientesSync.recargar();
+        } else {
+            alert(data.error || 'No se pudo eliminar el cliente');
+        }
+    })
+    .catch(() => alert('Error de conexion al eliminar el cliente'));
+}
+
+// El guardado va por fetch para poder actualizar la fila en el acto y avisar a
+// /ventas del cambio. Si el JS no esta disponible, el form sigue haciendo POST
+// normal y el servidor redirige.
+document.getElementById('formCli').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    const form = ev.target;
+    const datos = new FormData(form);
+    const btn = document.getElementById('btnGuardarCli');
+    const txt = document.getElementById('txtBtnGuardarCli');
+    const msg = document.getElementById('cliMsg');
+    const previo = txt.textContent;
+
+    btn.disabled = true;
+    txt.textContent = 'Guardando...';
+    msg.className = 'alert py-2 d-none';
+
+    fetch('/clientes', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'fetch' },
+        body: new URLSearchParams(datos)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.error || 'No se pudo guardar');
+        const c = data.cliente || {};
+        if (window.ClientesSync) {
+            ClientesSync.publicar(data.accion, c);
+            ClientesSync.recargar();
+        }
+        if (data.accion === 'editar') {
+            actualizarFilaCliente(c);
+            msg.className = 'alert alert-success py-2';
+            msg.textContent = 'Cliente #' + c.id + ' actualizado en toda la app.';
+        } else {
+            msg.className = 'alert alert-success py-2';
+            msg.textContent = 'Cliente #' + c.id + ' creado.';
+        }
+        limpiarFormCli();
+        document.getElementById('busquedaCli').value = '';
+        window.setTimeout(() => msg.classList.add('d-none'), 4000);
+    })
+    .catch(err => {
+        msg.className = 'alert alert-danger py-2';
+        msg.textContent = 'Error: ' + err.message;
+    })
+    .finally(() => {
+        btn.disabled = false;
+        txt.textContent = previo;
+    });
+});
+
+// Cambia los datos de la fila ya pintada, sin recargar la página, para que el
+// cambio se vea al instante en la tabla.
+function actualizarFilaCliente(c) {
+    const tr = document.querySelector('#tablaClientes tbody tr[data-id="' + c.id + '"]');
+    if (!tr) return;
+    const celdas = tr.children;
+    if (celdas[1]) celdas[1].textContent = c.nombre || '';
+    if (celdas[2]) celdas[2].textContent = c.telefono || '';
+    if (celdas[3]) celdas[3].textContent = c.ci || '';
+    if (celdas[4]) celdas[4].textContent = c.chapa || '';
+    if (celdas[5]) celdas[5].textContent = c.direccion || '';
+    // el botón de editar lleva los datos viejos embebidos: hay que rehacerlo
+    const editar = celdas[7] && celdas[7].querySelector('.btn-outline-primary');
+    if (editar) {
+        editar.setAttribute('onclick', 'editarCli(\'' + c.id + '\', \'' +
+            String(c.nombre || '').replace(/'/g, "\\'") + '\', \'' +
+            String(c.telefono || '').replace(/'/g, "\\'") + '\', \'' +
+            String(c.ci || '').replace(/'/g, "\\'") + '\', \'' +
+            String(c.chapa || '').replace(/'/g, "\\'") + '\', \'' +
+            String(c.direccion || '').replace(/'/g, "\\'") + '\')');
     }
+    tr.dataset.nombre = (c.nombre || '').toLowerCase();
 }
 </script>
 {% endblock %}

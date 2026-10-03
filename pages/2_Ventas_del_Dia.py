@@ -34,9 +34,26 @@ try:
     # Filtrar por fecha
     # ---------------------------
     st.subheader("📅 Filtrar por fecha")
-    fecha_inicio = st.date_input("Fecha inicio", pd.Timestamp.today())
-    fecha_fin = st.date_input("Fecha fin", pd.Timestamp.today())
-    if fecha_inicio > fecha_fin:
+
+    hoy = pd.Timestamp.today().date()
+    presets = {
+        "Hoy": (hoy, hoy),
+        "Ayer": (hoy - pd.Timedelta(days=1), hoy - pd.Timedelta(days=1)),
+        "Últimos 7 días": (hoy - pd.Timedelta(days=6), hoy),
+        "Últimos 30 días": (hoy - pd.Timedelta(days=29), hoy),
+        "Todo el historial": (None, None),
+        "Personalizado": None,
+    }
+    preset_sel = st.selectbox("Periodo", list(presets.keys()), key="periodo")
+    rango = presets[preset_sel]
+
+    if rango is None:
+        fecha_inicio = st.date_input("Fecha inicio", hoy - pd.Timedelta(days=7), key="rang_fecha_inicio")
+        fecha_fin = st.date_input("Fecha fin", hoy, key="rang_fecha_fin")
+    else:
+        fecha_inicio, fecha_fin = rango
+
+    if fecha_inicio is not None and fecha_fin is not None and fecha_inicio > fecha_fin:
         st.error("La fecha de inicio no puede ser mayor que la fecha final")
         st.stop()
 
@@ -71,10 +88,18 @@ try:
     # ---------------------------
     # Filtrar ventas por rango de fecha
     # ---------------------------
+    def en_rango(v):
+        fecha_venta = pd.to_datetime(v.get("fecha", pd.Timestamp.now())).date()
+        if fecha_inicio is not None and fecha_venta < fecha_inicio:
+            return False
+        if fecha_fin is not None and fecha_venta > fecha_fin:
+            return False
+        return True
+
     rows = [
         fila
         for v in ventas_data
-        if fecha_inicio <= pd.to_datetime(v.get("fecha", pd.Timestamp.now())).date() <= fecha_fin
+        if en_rango(v)
         for fila in generar_filas(v)
     ]
 
@@ -82,7 +107,7 @@ try:
         st.info("No hay ventas registradas en este rango de fechas.")
         st.stop()
 
-    df_ventas = pd.DataFrame(rows).sort_values("Fecha", ascending=False)
+    df_ventas = pd.DataFrame(rows).sort_values("Fecha", ascending=True)
 
     # ---------------------------
     # Formateo y estilo
@@ -177,11 +202,16 @@ try:
         )
 
     # Botones de descarga
-    descargar_excel(df_ventas, f"ventas_completas_{fecha_inicio}_{fecha_fin}")
+    etiqueta_rango = (
+        "todo_el_historial"
+        if preset_sel == "Todo el historial"
+        else f"{fecha_inicio}_{fecha_fin}"
+    )
+    descargar_excel(df_ventas, f"ventas_completas_{etiqueta_rango}")
     if not pagadas_df.empty:
-        descargar_excel(pagadas_df, f"ventas_pagadas_{fecha_inicio}_{fecha_fin}")
+        descargar_excel(pagadas_df, f"ventas_pagadas_{etiqueta_rango}")
     if not pendientes_df.empty:
-        descargar_excel(pendientes_df, f"ventas_pendientes_{fecha_inicio}_{fecha_fin}")
+        descargar_excel(pendientes_df, f"ventas_pendientes_{etiqueta_rango}")
 
 except Exception as e:
     handle_app_error(e, "Error al cargar o procesar los datos de ventas. Por favor, intenta nuevamente.")

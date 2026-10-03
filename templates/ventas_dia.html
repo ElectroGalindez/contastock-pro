@@ -3,6 +3,36 @@
 {% block page_title %}Reporte de Ventas del Dia{% endblock %}
 {% block content %}
 
+<form method="get" action="{{ url_for('ventas_dia') }}" class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="fecha_inicio">Fecha inicio</label>
+                <input type="date" class="form-control" id="fecha_inicio" name="fecha_inicio"
+                       value="{{ fecha_inicio }}" required>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="fecha_fin">Fecha fin</label>
+                <input type="date" class="form-control" id="fecha_fin" name="fecha_fin"
+                       value="{{ fecha_fin }}" required>
+            </div>
+            <div class="col-lg-6">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-funnel"></i> Filtrar
+                    </button>
+                    <a href="{{ url_for('ventas_dia') }}" class="btn btn-outline-secondary" title="Volver al dia de hoy">
+                        <i class="bi bi-calendar-day"></i> Hoy
+                    </a>
+                    <button type="button" class="btn btn-outline-success" onclick="descargarExcel()">
+                        <i class="bi bi-file-earmark-excel"></i> Descargar Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="card stat-card-sm">

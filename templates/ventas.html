@@ -12,13 +12,76 @@
                 </button>
             </div>
             <div class="card-body">
-                <select class="form-select form-select-lg" id="selectCliente" onchange="actualizarCliente()">
-                    <option value="">-- Selecciona un cliente --</option>
-                    {% for c in clientes %}
-                    <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }} (ID: {{ c.id }})</option>
-                    {% endfor %}
-                </select>
                 <input type="hidden" id="clienteId" name="cliente_id">
+                <script type="application/json" id="datosClientes">{{ clientes_selector|tojson }}</script>
+
+                <div id="selectorCliente">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="buscarCliente"
+                               placeholder="Buscar cliente por nombre, telefono, CI o ID..."
+                               autocomplete="off" role="combobox" aria-expanded="false"
+                               aria-autocomplete="list" aria-controls="listaClientes">
+                        <button class="btn btn-outline-secondary" type="button" id="btnLimpiarCliente"
+                                title="Limpiar busqueda" onclick="limpiarBusquedaCliente()" disabled>
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <div id="listaClientes" class="list-group mt-1 shadow d-none" role="listbox"></div>
+
+                    <div class="form-text d-flex justify-content-between align-items-center">
+                        <span id="hintClientes">{{ total_clientes }} clientes registrados</span>
+                        <span class="text-muted d-none" id="hintAtajo">
+                            <kbd>&uarr;</kbd><kbd>&darr;</kbd> navegar &middot; <kbd>Enter</kbd> elegir &middot; <kbd>Esc</kbd> cerrar
+                        </span>
+                    </div>
+                </div>
+
+                <div id="clienteElegido" class="d-none">
+                    <div class="d-flex align-items-center justify-content-between gap-3 p-3 rounded"
+                         style="background:var(--primary-light, #eef4ff); border:1px solid rgba(0,0,0,.08);">
+                        <div class="d-flex align-items-center gap-3 min-w-0">
+                            <i class="bi bi-person-check fs-3 text-success"></i>
+                            <div class="min-w-0">
+                                <div class="fw-semibold text-truncate" id="elegidoNombre"></div>
+                                <small class="text-muted" id="elegidoDetalle"></small>
+                            </div>
+                            <span class="badge bg-warning text-dark flex-shrink-0 d-none" id="elegidoGestorBadge"
+                                  title="Este cliente es un gestor de venta">
+                                <i class="bi bi-person-badge-fill"></i> Gestor
+                            </span>
+                        </div>
+                        <div class="d-flex gap-2 flex-shrink-0">
+                            <button type="button" class="btn btn-sm btn-outline-warning"
+                                    id="btnVerDeudas" title="Ver deudas del cliente"
+                                    onclick="abrirModalDeudas(Number(document.getElementById('clienteId').value))">
+                                <i class="bi bi-cash-stack"></i> Deudas
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    id="btnEditarCliente" title="Editar datos del cliente (Ctrl+E)"
+                                    onclick="editarClienteSeleccionado()">
+                                <i class="bi bi-pencil"></i> Editar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cambiarCliente()">
+                                <i class="bi bi-arrow-left-right"></i> Cambiar
+                            </button>
+                        </div>
+                    </div>
+                    <div id="alertaDeudaElegido" class="d-none mt-2">
+                        <div class="alert alert-warning d-flex align-items-center justify-content-between gap-2 py-2 px-3 mb-0">
+                            <span class="d-flex align-items-center gap-2">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                <span><strong>Este cliente tiene deudas pendientes.</strong>
+                                <span class="text-muted small">Revisá antes de vender.</span></span>
+                            </span>
+                            <button type="button" class="btn btn-sm btn-warning flex-shrink-0"
+                                    onclick="abrirModalDeudas(Number(document.getElementById('clienteId').value))">
+                                Ver deudas
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -103,6 +166,25 @@
                         <option value="Zelle">Zelle</option>
                     </select>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label" for="gestorId">
+                        Gestor de la venta
+                        <i class="bi bi-question-circle text-muted" data-bs-toggle="tooltip"
+                           title="Cliente marcado como gestor. Se deja vacio si la venta vino sin gestor."></i>
+                    </label>
+                    <select class="form-select" id="gestorId">
+                        <option value="">Sin gestor</option>
+                        {% for g in gestores %}
+                        <option value="{{ g.id }}">{{ g.nombre }}{% if g.telefono %} - {{ g.telefono }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    {% if not gestores %}
+                    <div class="form-text">
+                        Todavia no hay gestores marcados.
+                        <a href="{{ url_for('gestores_page') }}" class="alert-link">Marcá uno en el panel de Gestores</a>.
+                    </div>
+                    {% endif %}
+                </div>
                 <div class="mb-3" id="montoPagadoGroup">
                     <label class="form-label">Monto Pagado</label>
                     <input type="number" step="0.01" class="form-control form-control-lg" id="montoPagado" value="0">
@@ -112,10 +194,30 @@
                     <div class="form-control form-control-lg fw-bold text-danger" id="saldoPendiente">$0.00</div>
                 </div>
                 <hr>
-                <div class="d-grid">
+                <div class="d-grid gap-2">
                     <button class="btn btn-success btn-lg" onclick="registrarVenta()">
                         <i class="bi bi-check-circle"></i> Registrar Venta
                     </button>
+                    <button class="btn btn-outline-primary" id="btnUltimaFactura"
+                            onclick="abrirModalFactura(this.dataset.id)"
+                            data-id="{{ ultima_venta.id if ultima_venta else '' }}"
+                            {% if not ultima_venta %}disabled title="Todavia no hay ventas registradas"{% else %}
+                            title="Agregar datos y descargar la factura de la ultima venta registrada (#{{ ultima_venta.id }} - {{ ultima_venta.cliente_nombre }})"
+                            {% endif %}>
+                        <i class="bi bi-file-earmark-pdf"></i>
+                        {% if ultima_venta %}
+                            Factura de la ultima venta #{{ ultima_venta.id }}
+                        {% else %}
+                            Factura de la ultima venta
+                        {% endif %}
+                    </button>
+                    {% if ultima_venta %}
+                    <small class="text-muted text-center">
+                        Ultima: <strong>#{{ ultima_venta.id }}</strong>
+                        {{ ultima_venta.cliente_nombre }}
+                        &middot; {{ ultima_venta.fecha.strftime('%d/%m/%Y %H:%M') }}
+                    </small>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -134,8 +236,34 @@
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <span class="badge bg-primary" id="contadorVentas">{{ total_ventas }} ventas en total</span>
+            <span class="badge bg-primary" id="contadorVentas">{{ total_ventas }} ventas en el periodo</span>
         </div>
+    </div>
+    <div class="card-body border-bottom">
+        <form method="get" action="{{ url_for('registrar_venta') }}">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="fecha_inicio">Fecha inicio</label>
+                    <input type="date" class="form-control form-control-sm" id="fecha_inicio" name="fecha_inicio"
+                           value="{{ fecha_inicio }}" required>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <label class="form-label" for="fecha_fin">Fecha fin</label>
+                    <input type="date" class="form-control form-control-sm" id="fecha_fin" name="fecha_fin"
+                           value="{{ fecha_fin }}" required>
+                </div>
+                <div class="col-lg-6">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-funnel"></i> Filtrar
+                        </button>
+                        <a href="{{ url_for('registrar_venta') }}" class="btn btn-sm btn-outline-secondary" title="Volver al dia de hoy">
+                            <i class="bi bi-calendar-day"></i> Hoy
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </form>
     </div>
     <div class="card-body p-0 card-table-wrap">
         <table class="table table-hover mb-0">
@@ -144,6 +272,8 @@
                     <th>ID</th>
                     <th>Fecha</th>
                     <th>Cliente</th>
+                    <th>Gestor</th>
+                    <th>Productos</th>
                     <th class="text-end">Total</th>
                     <th class="text-end">Pagado</th>
                     <th>Estado</th>
@@ -153,11 +283,38 @@
             <tbody id="bodyVentas">
                 {% for v in ventas %}
                 {% set cliente_nombre = clientes_map.get(v.cliente_id, 'N/A') %}
+                {% set gestor_nombre = clientes_map.get(v.gestor_id) if v.gestor_id else none %}
                 {% set estado = 'Pagada' if v.pagado|float >= v.total|float else 'Pendiente' %}
+                {% set prods = v.productos_vendidos or [] %}
+                {% set unidades = prods | sum(attribute='cantidad') | float %}
                 <tr>
                     <td class="text-muted">#{{ v.id }}</td>
                     <td>{{ v.fecha.strftime('%d/%m/%Y %H:%M') if v.fecha else '' }}</td>
                     <td>{{ cliente_nombre }}</td>
+                    <td>
+                        {% if gestor_nombre %}
+                        <span class="badge bg-info text-dark" title="Gestor que trajo esta venta">
+                            <i class="bi bi-person-badge-fill"></i> {{ gestor_nombre }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if prods %}
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                data-detalle="detalleVenta{{ v.id }}"
+                                aria-expanded="false"
+                                onclick="toggleDetalleVenta('detalleVenta{{ v.id }}')"
+                                title="Ver los {{ prods | length }} producto(s) de esta venta">
+                            <i class="bi bi-box-seam"></i>
+                            {{ prods | length }} prod.
+                            <span class="text-muted">· {{ '%g'|format(unidades) }} u.</span>
+                        </button>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end">${{ "{:,.2f}".format(v.total|float) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(v.pagado|float) }}</td>
                     <td>
@@ -176,12 +333,46 @@
                         </button>
                     </td>
                 </tr>
+                <tr id="detalleVenta{{ v.id }}" class="detalle-venta d-none">
+                    <td colspan="9">
+                        {% if prods %}
+                        <table class="table table-sm mb-0 tabla-detalle-venta">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th class="text-end">Cantidad</th>
+                                    <th class="text-end">Precio unit.</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in prods %}
+                                <tr>
+                                    <td>{{ p.nombre }}</td>
+                                    <td class="text-end">{{ '%g'|format(p.cantidad|float) }}</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(p.precio_unitario|float) }}</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(p.subtotal|float) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="3" class="text-end">Total</th>
+                                    <th class="text-end">${{ "{:,.2f}".format(v.total|float) }}</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        {% else %}
+                        <span class="text-muted">Esta venta no tiene productos registrados.</span>
+                        {% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
-        <div id="ventasVacio" class="table-empty d-none">
+        <div id="ventasVacio" class="table-empty {% if ventas %}d-none{% endif %}">
             <i class="bi bi-inbox"></i>
-            No hay ventas registradas
+            No hay ventas registradas en este rango de fechas
         </div>
         <div id="ventasSinResultados" class="table-empty d-none">
             <i class="bi bi-search"></i>
@@ -191,19 +382,19 @@
         <nav class="py-3 px-3 border-top" id="paginacionVentas">
             <ul class="pagination pagination-sm justify-content-center mb-0">
                 <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('registrar_venta', page=page-1) }}">&laquo;</a>
+                    <a class="page-link" href="{{ url_for('registrar_venta', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, page=page-1) }}">&laquo;</a>
                 </li>
                 {% for p in range(1, total_pages + 1) %}
                     {% if p == page or p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
                     <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('registrar_venta', page=p) }}">{{ p }}</a>
+                        <a class="page-link" href="{{ url_for('registrar_venta', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, page=p) }}">{{ p }}</a>
                     </li>
                     {% elif p == page-3 or p == page+3 %}
                     <li class="page-item disabled"><span class="page-link">...</span></li>
                     {% endif %}
                 {% endfor %}
                 <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('registrar_venta', page=page+1) }}">&raquo;</a>
+                    <a class="page-link" href="{{ url_for('registrar_venta', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, page=page+1) }}">&raquo;</a>
                 </li>
             </ul>
         </nav>
@@ -218,21 +409,45 @@
     <input type="hidden" name="total" id="formTotal">
     <input type="hidden" name="pagado" id="formPagado">
     <input type="hidden" name="tipo_pago" id="formTipoPago">
+    <input type="hidden" name="gestor_id" id="formGestorId">
 </form>
 
 <form id="formEliminarVenta" method="POST" style="display:none">
     <input type="hidden" name="action" value="eliminar">
     <input type="hidden" name="venta_id" id="formVentaId">
+    <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio }}">
+    <input type="hidden" name="fecha_fin" value="{{ fecha_fin }}">
 </form>
+
+<div class="modal fade" id="modalDeudasCliente" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tituloModalDeudas">
+                    <i class="bi bi-cash-stack"></i> Deudas del cliente
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="cuerpoModalDeudas"></div>
+            <div class="modal-footer">
+                <a class="btn btn-sm btn-outline-secondary" id="linkVerDeudasCompleto" href="#" target="_blank" rel="noopener">
+                    <i class="bi bi-box-arrow-up-right"></i> Ver en Deudas
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="modal fade" id="modalNuevoCliente" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-person-plus"></i> Nuevo Cliente</h5>
+                <h5 class="modal-title" id="modalCliTitulo"><i class="bi bi-person-plus"></i> Nuevo Cliente</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="nuevoCliId" value="">
                 <div class="mb-3">
                     <label class="form-label">Nombre *</label>
                     <input type="text" class="form-control" id="nuevoCliNombre" placeholder="Nombre del cliente" required>
@@ -259,8 +474,8 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success" onclick="guardarNuevoCliente()">
-                    <i class="bi bi-check-lg"></i> Guardar y Seleccionar
+                <button type="button" class="btn btn-success" id="btnGuardarClienteModal" onclick="guardarClienteModal()">
+                    <i class="bi bi-check-lg"></i> <span id="txtGuardarClienteModal">Guardar y Seleccionar</span>
                 </button>
             </div>
         </div>
@@ -271,7 +486,11 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-file-earmark-pdf"></i> Factura <span id="facturaVentaId" class="text-danger"></span></h5>
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-pdf"></i> Factura
+                    <span id="facturaVentaId" class="text-danger"></span>
+                    <span id="facturaVentaEstado" class="badge ms-2"></span>
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -312,6 +531,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/clientes-sync.js') }}"></script>
 <script>
 let itemsOrden = [];
 let busquedaTimer = null;
@@ -330,6 +550,51 @@ function limpiarBusqueda() {
     location.reload();
 }
 
+function parametrosRango() {
+    const fi = document.getElementById('fecha_inicio').value;
+    const ff = document.getElementById('fecha_fin').value;
+    return 'fecha_inicio=' + encodeURIComponent(fi) + '&fecha_fin=' + encodeURIComponent(ff);
+}
+
+// Abre/cierra la fila de detalle de productos de una venta.
+function toggleDetalleVenta(idDetalle) {
+    const fila = document.getElementById(idDetalle);
+    if (!fila) return;
+    const btn = document.querySelector('[data-detalle="' + idDetalle + '"]');
+    const abrir = fila.classList.contains('d-none');
+    fila.classList.toggle('d-none', !abrir);
+    if (btn) {
+        btn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+        const icon = btn.querySelector('i');
+        if (icon) icon.className = abrir ? 'bi bi-chevron-down' : 'bi bi-box-seam';
+    }
+}
+
+function numeroBonito(n) {
+    return String(Number(n || 0));
+}
+
+function htmlDetalleProductos(productos, total) {
+    if (!productos || !productos.length) {
+        return '<span class="text-muted">Esta venta no tiene productos registrados.</span>';
+    }
+    const fmt = function (n) {
+        return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    let html = '<table class="table table-sm mb-0 tabla-detalle-venta">'
+        + '<thead><tr><th>Producto</th><th class="text-end">Cantidad</th>'
+        + '<th class="text-end">Precio unit.</th><th class="text-end">Subtotal</th></tr></thead><tbody>';
+    productos.forEach(function (p) {
+        html += '<tr><td>' + escaparHtml(p.nombre) + '</td>'
+            + '<td class="text-end">' + numeroBonito(p.cantidad) + '</td>'
+            + '<td class="text-end">$' + fmt(p.precio) + '</td>'
+            + '<td class="text-end">$' + fmt(p.subtotal) + '</td></tr>';
+    });
+    html += '</tbody><tfoot><tr><th colspan="3" class="text-end">Total</th>'
+        + '<th class="text-end">$' + fmt(total) + '</th></tr></tfoot></table>';
+    return html;
+}
+
 async function ejecutarBusqueda(q) {
     const tbody = document.getElementById('bodyVentas');
     const nav = document.getElementById('paginacionVentas');
@@ -340,7 +605,7 @@ async function ejecutarBusqueda(q) {
     if (!q) { location.reload(); return; }
 
     try {
-        const res = await fetch('/ventas/buscar?q=' + encodeURIComponent(q));
+        const res = await fetch('/ventas/buscar?q=' + encodeURIComponent(q) + '&' + parametrosRango());
         const data = await res.json();
         const rows = data.rows || [];
         tbody.innerHTML = '';
@@ -349,11 +614,27 @@ async function ejecutarBusqueda(q) {
             const estadoHtml = v.estado === 'Pagada'
                 ? '<span class="badge bg-success">Pagada</span>'
                 : '<span class="badge bg-warning text-dark">Pendiente</span>';
+            const prods = v.productos || [];
+            const unidades = prods.reduce(function (s, p) { return s + Number(p.cantidad || 0); }, 0);
+            const detalleId = 'detalleVenta' + v.id;
+            const botonProductos = prods.length
+                ? '<button class="btn btn-sm btn-outline-secondary" type="button" data-detalle="' + detalleId + '"'
+                  + ' aria-expanded="false" onclick="toggleDetalleVenta(\'' + detalleId + '\')"'
+                  + ' title="Ver los ' + prods.length + ' producto(s) de esta venta">'
+                  + '<i class="bi bi-box-seam"></i> ' + prods.length + ' prod.'
+                  + ' <span class="text-muted">· ' + numeroBonito(unidades) + ' u.</span></button>'
+                : '<span class="text-muted">—</span>';
+
             const tr = document.createElement('tr');
             tr.innerHTML =
                 '<td class="text-muted">#' + v.id + '</td>'
                 + '<td>' + (v.fecha || '') + '</td>'
-                + '<td>' + (v.cliente || '') + '</td>'
+                + '<td>' + escaparHtml(v.cliente || '') + '</td>'
+                + '<td>' + (v.gestor
+                    ? '<span class="badge bg-info text-dark" title="Gestor que trajo esta venta">'
+                      + '<i class="bi bi-person-badge-fill"></i> ' + escaparHtml(v.gestor) + '</span>'
+                    : '<span class="text-muted">—</span>') + '</td>'
+                + '<td>' + botonProductos + '</td>'
                 + '<td class="text-end">$' + fmt(v.total) + '</td>'
                 + '<td class="text-end">$' + fmt(v.pagado) + '</td>'
                 + '<td>' + estadoHtml + '</td>'
@@ -362,6 +643,15 @@ async function ejecutarBusqueda(q) {
                 + '<button class="btn btn-sm btn-outline-danger btn-icon" title="Eliminar venta y reponer stock" onclick="eliminarVenta(' + v.id + ')"><i class="bi bi-trash"></i></button>'
                 + '</td>';
             tbody.appendChild(tr);
+
+            const trDetalle = document.createElement('tr');
+            trDetalle.id = detalleId;
+            trDetalle.className = 'detalle-venta d-none';
+            const tdDetalle = document.createElement('td');
+            tdDetalle.colSpan = 9;
+            tdDetalle.innerHTML = htmlDetalleProductos(prods, v.total);
+            trDetalle.appendChild(tdDetalle);
+            tbody.appendChild(trDetalle);
         });
         if (nav) nav.classList.add('d-none');
         vacio.classList.add('d-none');
@@ -373,10 +663,293 @@ async function ejecutarBusqueda(q) {
     }
 }
 
-function actualizarCliente() {
-    const sel = document.getElementById('selectCliente');
-    document.getElementById('clienteId').value = sel.value;
+/* =========================
+   SELECTOR DE CLIENTES
+   Filtra en el navegador sobre la lista completa de clientes ya
+   cargada en #datosClientes, asi la respuesta es inmediata.
+   ========================= */
+const TODOS_CLIENTES = JSON.parse(document.getElementById('datosClientes').textContent);
+let clienteFiltrados = [];
+let clienteActivo = -1;
+
+/* Si un cliente se edita o borra en /clientes, esta pagina mantiene su propia
+   copia en TODOS_CLIENTES y se quedaba con los datos viejos. Con esta
+   sincronizacion el selector y el cliente elegido se actualizan al instante,
+   sin recargar la pagina. */
+if (window.ClientesSync) {
+    ClientesSync.suscribir(function (msg) {
+        const c = msg.cliente;
+        if (msg.accion === 'recargar') {
+            recargarClientesDesdeServidor();
+            return;
+        }
+        if (!c || c.i == null) return;
+
+        if (msg.accion === 'eliminar') {
+            const i = TODOS_CLIENTES.findIndex(function (x) { return x.i === c.i; });
+            if (i !== -1) TODOS_CLIENTES.splice(i, 1);
+        } else {
+            const i = TODOS_CLIENTES.findIndex(function (x) { return x.i === c.i; });
+            const previo = i === -1 ? null : TODOS_CLIENTES[i];
+            const nuevo = { i: c.i, n: c.n, t: c.t, c: c.c, h: c.h, d: c.d };
+            // las banderas de deuda y gestor no siempre viajan en el aviso: se
+            // conserva la que ya tenia hasta que /ventas/clientes las refresque
+            if (c.deb != null) nuevo.deb = c.deb;
+            else if (previo && previo.deb != null) nuevo.deb = previo.deb;
+            if (c.g != null) nuevo.g = c.g;
+            else if (previo && previo.g != null) nuevo.g = previo.g;
+            if (i === -1) TODOS_CLIENTES.push(nuevo);
+            else TODOS_CLIENTES[i] = nuevo;
+        }
+
+        // el cliente que ya estaba elegido puede ser el que cambio
+        const elegido = document.getElementById('clienteId').value;
+        if (elegido && String(elegido) === String(c.i)) {
+            const fresco = TODOS_CLIENTES.find(function (x) { return x.i === c.i; });
+            if (fresco && msg.accion !== 'eliminar') pintarClienteElegido(fresco);
+        }
+
+        // si la lista esta abierta, repintarla con los datos nuevos
+        if (!document.getElementById('listaClientes').classList.contains('d-none')) {
+            pintarListaClientes();
+        }
+    });
 }
+
+async function recargarClientesDesdeServidor() {
+    try {
+        const res = await fetch('/ventas/clientes');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.clientes) && data.clientes.length) {
+            TODOS_CLIENTES.length = 0;
+            data.clientes.forEach(function (c) { TODOS_CLIENTES.push(c); });
+        }
+    } catch (e) { /* sin red: se conserva la lista actual */ }
+}
+
+function normalizar(texto) {
+    return String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function filtrarClientes(q) {
+    const nq = normalizar(q);
+    if (!nq) return TODOS_CLIENTES;
+    const palabras = nq.split(/\s+/);
+    return TODOS_CLIENTES.filter(function (c) {
+        const heno = normalizar(c.n + ' ' + c.t + ' ' + c.c + ' ' + c.i);
+        return palabras.every(function (p) { return heno.indexOf(p) !== -1; });
+    });
+}
+
+function abrirListaClientes() {
+    document.getElementById('listaClientes').classList.remove('d-none');
+    document.getElementById('buscarCliente').setAttribute('aria-expanded', 'true');
+    document.getElementById('hintAtajo').classList.remove('d-none');
+}
+
+function cerrarListaClientes() {
+    document.getElementById('listaClientes').classList.add('d-none');
+    document.getElementById('buscarCliente').setAttribute('aria-expanded', 'false');
+    document.getElementById('hintAtajo').classList.add('d-none');
+    clienteActivo = -1;
+}
+
+function escaparHtml(valor) {
+    const d = document.createElement('div');
+    d.textContent = valor == null ? '' : String(valor);
+    return d.innerHTML;
+}
+
+function resaltar(texto, q) {
+    const heno = normalizar(texto);
+    const palabras = normalizar(q).split(/\s+/).filter(Boolean);
+    if (!palabras.length) return escaparHtml(texto);
+    let salida = escaparHtml(texto);
+    palabras.forEach(function (p) {
+        if (!p) return;
+        const patron = new RegExp('(' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+        salida = salida.replace(patron, '<mark>$1</mark>');
+    });
+    return salida;
+}
+
+function pintarListaClientes() {
+    const input = document.getElementById('buscarCliente');
+    const q = input.value.trim();
+    const lista = document.getElementById('listaClientes');
+    const MAX = 300;
+
+    clienteFiltrados = filtrarClientes(q);
+    clienteActivo = -1;
+    lista.innerHTML = '';
+
+    if (!clienteFiltrados.length) {
+        const item = document.createElement('div');
+        item.className = 'list-group-item vacio-item d-flex justify-content-between align-items-center gap-2';
+        item.innerHTML = '<span class="min-w-0"><i class="bi bi-search me-1"></i>Sin resultados para "' + escaparHtml(q) + '"</span>';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-success flex-shrink-0';
+        btn.dataset.nombre = q;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Crear "' + escaparHtml(q) + '"';
+        btn.addEventListener('click', function () { abrirModalNuevoClienteCon(btn.dataset.nombre); });
+        item.appendChild(btn);
+        lista.appendChild(item);
+    } else {
+        const visibles = clienteFiltrados.slice(0, MAX);
+        const frag = document.createDocumentFragment();
+        visibles.forEach(function (c, i) {
+            const meta = ['ID: ' + c.i];
+            if (c.t) meta.push(c.t);
+            if (c.c) meta.push('CI: ' + c.c);
+
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
+            item.setAttribute('role', 'option');
+            item.dataset.indice = i;
+            item.innerHTML = '<span class="min-w-0 text-start">'
+                + '<span class="cliente-nombre">' + resaltar(c.n, q) + '</span><br>'
+                + '<span class="cliente-meta">' + escaparHtml(meta.join(' \u00b7 ')) + '</span>'
+                + '</span>';
+            item.addEventListener('click', function () { elegirCliente(clienteFiltrados[i]); });
+
+            // Boton de deudas en vez del monto: el selector no muestra
+            // cantidades, se consultan ahi con "ver deudas".
+            const editar = document.createElement('span');
+            editar.className = 'd-flex align-items-center gap-1 flex-shrink-0';
+            editar.innerHTML =
+                (c.deb
+                    ? '<span class="badge bg-warning text-dark" title="Tiene deudas pendientes">'
+                      + '<i class="bi bi-exclamation-triangle-fill"></i> Deuda</span>'
+                    : '')
+                + (c.g
+                    ? '<span class="badge bg-info text-dark" title="Cliente marcado como gestor">'
+                      + '<i class="bi bi-person-badge-fill"></i> Gestor</span>'
+                    : '')
+                + '<button type="button" class="btn btn-sm btn-outline-warning btn-icon"'
+                + ' title="Ver deudas de ' + escaparHtml(c.n) + '"'
+                + ' onclick="event.stopPropagation();abrirModalDeudas(' + c.i + ')">'
+                + '<i class="bi bi-cash-stack"></i></button>'
+                + '<button type="button" class="btn btn-sm btn-outline-primary btn-icon"'
+                + ' title="Editar ' + escaparHtml(c.n) + '"'
+                + ' onclick="event.stopPropagation();abrirModalEditarCliente(' + c.i + ')">'
+                + '<i class="bi bi-pencil"></i></button>';
+            item.appendChild(editar);
+
+            frag.appendChild(item);
+        });
+        lista.appendChild(frag);
+
+        if (clienteFiltrados.length > MAX) {
+            const aviso = document.createElement('div');
+            aviso.className = 'list-group-item vacio-item small';
+            aviso.textContent = 'Mostrando ' + MAX + ' de ' + clienteFiltrados.length
+                + ' clientes. Segui escribiendo para acotar.';
+            lista.appendChild(aviso);
+        }
+    }
+
+    const hint = document.getElementById('hintClientes');
+    hint.textContent = q
+        ? clienteFiltrados.length + (clienteFiltrados.length === 1 ? ' coincidencia' : ' coincidencias')
+        : TODOS_CLIENTES.length + (TODOS_CLIENTES.length === 1 ? ' cliente registrado' : ' clientes registrados');
+
+    abrirListaClientes();
+}
+
+function moverClienteActivo(delta) {
+    const items = document.querySelectorAll('#listaClientes .list-group-item[role="option"]');
+    if (!items.length) return;
+    clienteActivo = (clienteActivo + delta + items.length) % items.length;
+    items.forEach(function (el, i) { el.classList.toggle('activo', i === clienteActivo); });
+    items[clienteActivo].scrollIntoView({ block: 'nearest' });
+}
+
+function elegirClienteActivo() {
+    const items = document.querySelectorAll('#listaClientes .list-group-item[role="option"]');
+    if (!items.length) return;
+    const c = clienteFiltrados[clienteActivo >= 0 ? clienteActivo : 0];
+    if (c) elegirCliente(c);
+}
+
+function elegirCliente(c) {
+    document.getElementById('clienteId').value = c.i;
+    pintarClienteElegido(c);
+    document.getElementById('selectorCliente').classList.add('d-none');
+    document.getElementById('clienteElegido').classList.remove('d-none');
+    cerrarListaClientes();
+}
+
+function pintarClienteElegido(c) {
+    document.getElementById('elegidoNombre').textContent = c.n;
+    document.getElementById('elegidoDetalle').textContent =
+        ['ID: ' + c.i, c.t || null, c.h || null, c.c ? 'CI: ' + c.c : null]
+            .filter(Boolean).join(' \u00b7 ');
+    // aviso para los clientes que deben: 'deb' viene de la tabla deudas, no de
+    // clientes.deuda_total (esa columna esta desactualizada y marcaba deudores
+    // que ya no deben nada)
+    document.getElementById('alertaDeudaElegido').classList.toggle('d-none', !c.deb);
+    // los gestores llevan etiqueta para saber de entrada a quien se le paga
+    // comision. Es solo una marca: el gestor tambien es un cliente normal.
+    document.getElementById('elegidoGestorBadge').classList.toggle('d-none', !c.g);
+}
+
+function cambiarCliente() {
+    document.getElementById('clienteId').value = '';
+    document.getElementById('clienteElegido').classList.add('d-none');
+    document.getElementById('selectorCliente').classList.remove('d-none');
+    const input = document.getElementById('buscarCliente');
+    input.focus();
+    pintarListaClientes();
+}
+
+function limpiarBusquedaCliente() {
+    const input = document.getElementById('buscarCliente');
+    input.value = '';
+    document.getElementById('btnLimpiarCliente').disabled = true;
+    input.focus();
+    pintarListaClientes();
+}
+
+function abrirModalNuevoClienteCon(nombre) {
+    document.getElementById('nuevoCliId').value = '';
+    document.getElementById('nuevoCliNombre').value = nombre || '';
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalNuevoCliente'));
+    modal.show();
+}
+
+document.getElementById('buscarCliente').addEventListener('input', function () {
+    document.getElementById('btnLimpiarCliente').disabled = !this.value;
+    pintarListaClientes();
+});
+
+// Ctrl+E abre la edicion rapida del cliente elegido.
+document.addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'e') return;
+    const abierto = document.getElementById('modalNuevoCliente').classList.contains('show');
+    if (abierto) return;
+    if (!document.getElementById('clienteId').value) return;
+    e.preventDefault();
+    editarClienteSeleccionado();
+});
+
+document.getElementById('buscarCliente').addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moverClienteActivo(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moverClienteActivo(-1); }
+    else if (e.key === 'Enter') {
+        if (!document.getElementById('listaClientes').classList.contains('d-none')) {
+            e.preventDefault();
+            elegirClienteActivo();
+        }
+    } else if (e.key === 'Escape') { cerrarListaClientes(); }
+});
+
+document.getElementById('buscarCliente').addEventListener('focus', pintarListaClientes);
+
+document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && !e.target.closest('#selectorCliente')) cerrarListaClientes();
+});
 
 document.getElementById('selectProducto').addEventListener('change', function() {
     const opt = this.options[this.selectedIndex];
@@ -468,6 +1041,8 @@ function registrarVenta() {
     const total = itemsOrden.reduce((s, i) => s + i.subtotal, 0);
     const pagado = document.getElementById('pagoPagado').checked ? total : 0;
     const tipoPago = document.getElementById('tipoPago').value;
+    // el gestor es opcional: vacio significa que la venta vino sin gestor
+    const gestorId = document.getElementById('gestorId').value;
 
     document.getElementById('formClienteId').value = clienteId;
     document.getElementById('formItems').value = JSON.stringify(itemsOrden.map(i => ({
@@ -476,6 +1051,7 @@ function registrarVenta() {
     document.getElementById('formTotal').value = total;
     document.getElementById('formPagado').value = pagado;
     document.getElementById('formTipoPago').value = tipoPago;
+    document.getElementById('formGestorId').value = gestorId;
     document.getElementById('formRegistrar').submit();
 }
 
@@ -505,20 +1081,31 @@ async function descargarFactura(id) {
     }
 }
 
-let facturaVentaId = null;
+// El id de la venta que se esta facturando. OJO: el nombre NO puede ser
+// 'facturaVentaId' porque ese es el id del <span> del titulo, y el global
+// chocaria con la propiedad que el navegador crea a partir del id.
+let facturaVentaIdActual = null;
+// Secuencia para ignorar respuestas viejas: si el usuario clickea dos filas
+// rapido, la respuesta lenta de la primera no debe pisar los datos de la segunda.
+let facturaSeq = 0;
 
 async function abrirModalFactura(id) {
-    facturaVentaId = id;
+    if (!id) { alert('Todavia no hay ninguna venta registrada'); return; }
+    facturaVentaIdActual = id;
+    facturaSeq += 1;
+    const miSeq = facturaSeq;
     document.getElementById('facturaVentaId').textContent = '# ' + id;
     document.getElementById('facturaMsg').innerHTML = '';
-    await cargarDatosFactura(id);
+    const ok = await cargarDatosFactura(id, miSeq);
+    if (!ok || miSeq !== facturaSeq) return;   // llego una peticion mas nueva
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDatosFactura')).show();
 }
 
-async function cargarDatosFactura(id) {
+async function cargarDatosFactura(id, miSeq) {
     try {
         const res = await fetch('/api/ventas/' + id + '/datos_factura');
         const d = await res.json();
+        if (miSeq !== undefined && miSeq !== facturaSeq) return false;
         if (d.error) throw new Error(d.error);
 
         document.getElementById('fObs').value = d.venta.observaciones || '';
@@ -528,20 +1115,26 @@ async function cargarDatosFactura(id) {
         document.getElementById('fChapa').value = d.venta.chapa || '';
 
         const v = d.venta, c = d.cliente || {};
+        const pendiente = Number(v.saldo || 0) > 0;
+        const badge = document.getElementById('facturaVentaEstado');
+        badge.className = 'badge ms-2 ' + (pendiente ? 'bg-warning text-dark' : 'bg-success');
+        badge.textContent = pendiente ? 'PENDIENTE' : 'PAGADA';
         document.getElementById('facturaResumen').innerHTML =
-            '<div class="col-md-4"><span class="text-muted">Cliente:</span> <strong>' + (c.nombre || 'N/A') + '</strong></div>'
-            + '<div class="col-md-4"><span class="text-muted">CI:</span> ' + (c.ci || '-') + ' &nbsp;|&nbsp; <span class="text-muted">Chapa:</span> ' + (c.chapa || '-') + '</div>'
+            '<div class="col-md-4"><span class="text-muted">Cliente:</span> <strong>' + escaparHtml(c.nombre || 'N/A') + '</strong></div>'
+            + '<div class="col-md-4"><span class="text-muted">CI:</span> ' + escaparHtml(c.ci || '-') + ' &nbsp;|&nbsp; <span class="text-muted">Chapa:</span> ' + escaparHtml(c.chapa || '-') + '</div>'
             + '<div class="col-md-4"><span class="text-muted">Fecha:</span> ' + v.fecha + '</div>'
             + '<div class="col-md-4"><span class="text-muted">Total:</span> <strong>$' + formatMoney(v.total) + '</strong></div>'
             + '<div class="col-md-4"><span class="text-muted">Pagado:</span> $' + formatMoney(v.pagado) + '</div>'
-            + '<div class="col-md-4"><span class="text-muted">Saldo:</span> <span class="' + (v.saldo > 0 ? 'text-danger' : 'text-success') + '"><strong>$' + formatMoney(v.saldo) + '</strong></span></div>'
-            + '<div class="col-md-4"><span class="text-muted">Metodo:</span> ' + (v.tipo_pago || '-') + '</div>'
-            + '<div class="col-md-4"><span class="text-muted">Usuario:</span> ' + (v.usuario || '-') + '</div>'
-            + '<div class="col-md-4"><span class="text-muted">Direccion:</span> ' + (c.direccion || '-') + '</div>'
-            + '<div class="col-md-4"><span class="text-muted">Telefono:</span> ' + (c.telefono || '-') + '</div>';
+            + '<div class="col-md-4"><span class="text-muted">Saldo:</span> <span class="' + (pendiente ? 'text-danger' : 'text-success') + '"><strong>$' + formatMoney(v.saldo) + '</strong></span></div>'
+            + '<div class="col-md-4"><span class="text-muted">Metodo:</span> ' + escaparHtml(v.tipo_pago || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Usuario:</span> ' + escaparHtml(v.usuario || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Direccion:</span> ' + escaparHtml(c.direccion || '-') + '</div>'
+            + '<div class="col-md-4"><span class="text-muted">Telefono:</span> ' + escaparHtml(c.telefono || '-') + '</div>';
+        return true;
     } catch (err) {
         document.getElementById('facturaResumen').innerHTML = '';
         document.getElementById('facturaMsg').innerHTML = '<div class="alert alert-danger py-2">Error al cargar datos: ' + err.message + '</div>';
+        return false;
     }
 }
 
@@ -550,7 +1143,7 @@ function formatMoney(n) {
 }
 
 async function guardarYDescargarFactura() {
-    const btn = event.target;
+    const btn = document.querySelector('#modalDatosFactura .modal-footer .btn-danger');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
     document.getElementById('facturaMsg').innerHTML = '';
@@ -564,7 +1157,7 @@ async function guardarYDescargarFactura() {
             chapa: document.getElementById('fChapa').value
         };
 
-        const r = await fetch('/api/ventas/' + facturaVentaId + '/factura_datos', {
+        const r = await fetch('/api/ventas/' + facturaVentaIdActual + '/factura_datos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -572,8 +1165,8 @@ async function guardarYDescargarFactura() {
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'No se pudo guardar');
 
-        const ultimaFactura = { ventaId: facturaVentaId, archivo: null };
-        const res = await fetch('/factura/' + facturaVentaId + '/descargar', { method: 'GET' });
+        const ultimaFactura = { ventaId: facturaVentaIdActual, archivo: null };
+        const res = await fetch('/factura/' + facturaVentaIdActual + '/descargar', { method: 'GET' });
         const pdf = await res.json();
         if (!pdf.ok) throw new Error(pdf.error || 'No se pudo generar la factura');
         ultimaFactura.archivo = pdf.archivo;
@@ -585,7 +1178,7 @@ async function guardarYDescargarFactura() {
             cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
             cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
                 + '<div class="d-flex"><div class="toast-body">'
-                + '<i class="bi bi-check-circle-fill me-2"></i>Factura #' + facturaVentaId + ' guardada y abierta en su visor PDF.<br>'
+                + '<i class="bi bi-check-circle-fill me-2"></i>Factura #' + facturaVentaIdActual + ' guardada y abierta en su visor PDF.<br>'
                 + '<small>Guardada en: ' + pdf.archivo + '</small>'
                 + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
             document.body.appendChild(cont);
@@ -600,10 +1193,156 @@ async function guardarYDescargarFactura() {
     }
 }
 
-function guardarNuevoCliente() {
+/* Abre el modal en modo edicion. Pide el cliente al servidor porque la copia
+   que hay en el navegador no trae la direccion. */
+function abrirModalEditarCliente(id) {
+    const c = buscarClienteEnMemoria(id);
+    if (!c) return;
+
+    document.getElementById('nuevoCliId').value = c.i;
+    document.getElementById('nuevoCliNombre').value = c.n || '';
+    document.getElementById('nuevoCliTelefono').value = c.t || '';
+    document.getElementById('nuevoCliCi').value = c.c || '';
+    document.getElementById('nuevoCliChapa').value = c.h || '';
+    document.getElementById('modalCliTitulo').innerHTML =
+        '<i class="bi bi-pencil"></i> Editar Cliente #' + c.i;
+    document.getElementById('txtGuardarClienteModal').textContent = 'Guardar cambios';
+    document.getElementById('nuevoCliDireccion').value = '';
+    document.getElementById('nuevoCliMsg').innerHTML =
+        '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Cargando datos...</div>';
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalNuevoCliente')).show();
+    window.setTimeout(function () { document.getElementById('nuevoCliNombre').focus(); }, 400);
+
+    fetch('/api/clientes/' + c.i)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) {
+                document.getElementById('nuevoCliMsg').innerHTML =
+                    '<div class="alert alert-danger py-2">No se pudo cargar el cliente</div>';
+                return;
+            }
+            const f = data.cliente;
+            document.getElementById('nuevoCliNombre').value = f.nombre || '';
+            document.getElementById('nuevoCliTelefono').value = f.telefono || '';
+            document.getElementById('nuevoCliCi').value = f.ci || '';
+            document.getElementById('nuevoCliChapa').value = f.chapa || '';
+            document.getElementById('nuevoCliDireccion').value = f.direccion || '';
+            document.getElementById('nuevoCliMsg').innerHTML = '';
+        })
+        .catch(() => {
+            document.getElementById('nuevoCliMsg').innerHTML =
+                '<div class="alert alert-warning py-2">Se muestran los datos guardados en esta pagina</div>';
+        });
+}
+
+function editarClienteSeleccionado() {
+    const id = document.getElementById('clienteId').value;
+    if (!id) return;
+    abrirModalEditarCliente(Number(id));
+}
+
+/* ---------------- Deudas del cliente ---------------- */
+
+function formatearMonto(n) {
+    return '$' + Number(n || 0).toLocaleString('en-US',
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function abrirModalDeudas(id) {
+    if (!id) return;
+    const cuerpo = document.getElementById('cuerpoModalDeudas');
+    document.getElementById('tituloModalDeudas').innerHTML =
+        '<i class="bi bi-cash-stack"></i> Deudas del cliente #' + id;
+    document.getElementById('linkVerDeudasCompleto').href = '/deudas?cliente_id=' + id;
+    cuerpo.innerHTML = '<div class="text-center py-4">'
+        + '<span class="spinner-border"></span><p class="mt-2 mb-0">Cargando deudas...</p></div>';
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDeudasCliente')).show();
+
+    fetch('/api/clientes/' + id + '/deudas')
+        .then(r => r.json())
+        .then(data => pintarDeudasCliente(data))
+        .catch(() => {
+            cuerpo.innerHTML = '<div class="alert alert-danger py-2">No se pudieron cargar las deudas</div>';
+        });
+}
+
+function pintarDeudasCliente(data) {
+    const cuerpo = document.getElementById('cuerpoModalDeudas');
+    document.getElementById('tituloModalDeudas').innerHTML =
+        '<i class="bi bi-cash-stack"></i> Deudas de ' + escaparHtml(data.cliente.nombre)
+        + ' <small class="text-muted">#' + data.cliente.id + '</small>';
+
+    if (!data.deudas.length) {
+        cuerpo.innerHTML = '<div class="text-center py-4 text-muted">'
+            + '<i class="bi bi-check-circle fs-2 text-success"></i>'
+            + '<p class="mt-2 mb-0">Este cliente no tiene deudas pendientes</p>'
+            + '</div>';
+        return;
+    }
+
+    let html = '<div class="border rounded p-2 text-center mb-3">'
+        + '<div class="small text-muted">Deudas pendientes</div>'
+        + '<div class="fs-5 fw-bold">' + data.total + '</div>'
+        + '</div>';
+
+    html += '<div class="table-responsive"><table class="table table-sm align-middle mb-0">'
+        + '<thead><tr><th>Fecha</th><th>Producto y cantidad</th>'
+        + '<th class="text-end">Monto</th></tr></thead><tbody>';
+
+    data.deudas.forEach(function (d) {
+        const fecha = d.fecha
+            ? (String(d.fecha).indexOf('T') !== -1 ? String(d.fecha).slice(0, 10) : d.fecha)
+            : '';
+        html += '<tr>'
+            + '<td class="text-nowrap small">' + escaparHtml(fecha) + '</td>'
+            + '<td class="small">' + descripcionProductos(d.detalles) + '</td>'
+            + '<td class="text-end fw-semibold text-nowrap">'
+            + formatearMonto(d.monto_total) + '</td>'
+            + '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    cuerpo.innerHTML = html;
+}
+
+/* Descripcion de la deuda: producto y cantidad de cada cosa pendiente. */
+function descripcionProductos(detalles) {
+    if (!detalles || !detalles.length) return '<span class="text-muted">Sin detalle</span>';
+    return detalles.map(function (p) {
+        const nombre = escaparHtml(p.producto || 'Producto');
+        const cant = Number(p.cantidad || 0);
+        return '<span class="d-inline-block me-2 mb-1">'
+            + '<i class="bi bi-box me-1 text-muted"></i>' + nombre
+            + ' <span class="badge bg-secondary ms-1">'
+            + (cant === 1 ? '1 unidad' : cant + ' unidades') + '</span>'
+            + '</span>';
+    }).join('');
+}
+
+function buscarClienteEnMemoria(id) {
+    id = Number(id);
+    return TODOS_CLIENTES.find(function (x) { return x.i === id; }) || null;
+}
+
+// Al cerrarse el modal se borra todo, para que el boton "Nuevo Cliente" de la
+// cabecera no abra en modo edicion por un id que quedo de antes.
+document.getElementById('modalNuevoCliente').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('nuevoCliId').value = '';
+    document.getElementById('modalCliTitulo').innerHTML =
+        '<i class="bi bi-person-plus"></i> Nuevo Cliente';
+    document.getElementById('txtGuardarClienteModal').textContent = 'Guardar y Seleccionar';
+});
+
+/* Un solo guardado para crear y para editar: decide segun haya id o no. */
+function guardarClienteModal() {
+    const id = document.getElementById('nuevoCliId').value;
+    const editando = !!id;
     const nombre = document.getElementById('nuevoCliNombre').value.trim();
+    const msg = document.getElementById('nuevoCliMsg');
     if (!nombre) {
-        document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">El nombre es obligatorio</div>';
+        msg.innerHTML = '<div class="alert alert-danger py-2">El nombre es obligatorio</div>';
         return;
     }
     const payload = {
@@ -614,45 +1353,94 @@ function guardarNuevoCliente() {
         direccion: document.getElementById('nuevoCliDireccion').value.trim()
     };
 
-    const btn = event.target;
+    const btn = document.getElementById('btnGuardarClienteModal');
+    const txt = document.getElementById('txtGuardarClienteModal');
+    const previo = txt.textContent;
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+    txt.textContent = 'Guardando...';
 
-    fetch('/api/clientes', {
-        method: 'POST',
+    fetch(editando ? '/api/clientes/' + id : '/api/clientes', {
+        method: editando ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
     .then(r => r.json())
     .then(data => {
         if (data.ok) {
-            const sel = document.getElementById('selectCliente');
-            const opt = document.createElement('option');
-            opt.value = data.cliente.id;
-            opt.textContent = data.cliente.nombre + ' (ID: ' + data.cliente.id + ')';
-            sel.appendChild(opt);
-            sel.value = data.cliente.id;
-            document.getElementById('clienteId').value = data.cliente.id;
+            const c = data.cliente;
+            const ficha = {
+                i: c.id,
+                n: c.nombre,
+                t: c.telefono || '',
+                c: c.ci || '',
+                h: c.chapa || '',
+                d: 0
+            };
+
+            if (editando) {
+                // actualizar la copia en memoria, sin duplicar el cliente
+                const i = TODOS_CLIENTES.findIndex(function (x) { return x.i === c.id; });
+                if (i === -1) {
+                    ficha.deb = false;
+                    TODOS_CLIENTES.push(ficha);
+                } else {
+                    ficha.deb = TODOS_CLIENTES[i].deb;   // la deuda no cambio
+                    TODOS_CLIENTES[i] = ficha;
+                }
+                // si es el cliente elegido, se actualiza la ficha de una vez
+                const elegido = document.getElementById('clienteId').value;
+                if (elegido && String(elegido) === String(c.id)) pintarClienteElegido(ficha);
+            } else {
+                ficha.deb = false;
+                elegirCliente(ficha);
+                TODOS_CLIENTES.push(ficha);
+            }
+
+            if (window.ClientesSync) {
+                ClientesSync.publicar(editando ? 'editar' : 'crear', c);
+                ClientesSync.recargar();
+            }
 
             const modal = bootstrap.Modal.getInstance(document.getElementById('modalNuevoCliente'));
             modal.hide();
-            document.getElementById('nuevoCliMsg').innerHTML = '';
+            msg.innerHTML = '';
+            document.getElementById('nuevoCliId').value = '';
             document.getElementById('nuevoCliNombre').value = '';
             document.getElementById('nuevoCliTelefono').value = '';
             document.getElementById('nuevoCliCi').value = '';
             document.getElementById('nuevoCliChapa').value = '';
             document.getElementById('nuevoCliDireccion').value = '';
+            document.getElementById('modalCliTitulo').innerHTML =
+                '<i class="bi bi-person-plus"></i> Nuevo Cliente';
+            document.getElementById('txtGuardarClienteModal').textContent = 'Guardar y Seleccionar';
+
+            // si el desplegable esta abierto, repintarlo con el nombre nuevo
+            if (!document.getElementById('listaClientes').classList.contains('d-none')) {
+                pintarListaClientes();
+            }
         } else {
-            document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">' + (data.error || 'Error al crear cliente') + '</div>';
+            msg.innerHTML = '<div class="alert alert-danger py-2">' + escaparHtml(data.error || 'Error al guardar el cliente') + '</div>';
         }
     })
     .catch(err => {
-        document.getElementById('nuevoCliMsg').innerHTML = '<div class="alert alert-danger py-2">Error de conexion: ' + err + '</div>';
+        msg.innerHTML = '<div class="alert alert-danger py-2">Error de conexion: ' + escaparHtml(err) + '</div>';
     })
     .finally(() => {
         btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check-lg"></i> Guardar y Seleccionar';
+        txt.textContent = previo;
     });
 }
+
+// Tras registrar una venta el servidor redirige a /ventas?factura=<id>.
+// Eso abre solo la factura de la venta recien creada, y limpiamos la URL
+// para que recargar no la vuelva a abrir.
+{% if factura_pendiente %}
+document.addEventListener('DOMContentLoaded', function () {
+    abrirModalFactura({{ factura_pendiente }});
+    const u = new URL(window.location.href);
+    u.searchParams.delete('factura');
+    window.history.replaceState({}, '', u);
+});
+{% endif %}
 </script>
 {% endblock %}

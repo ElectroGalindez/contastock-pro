@@ -59,11 +59,14 @@
                 <div class="mb-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" id="buscadorCliente" class="form-control" placeholder="Buscar por nombre, ID, CI, chapa..." oninput="filtrarClientes()" autocomplete="off">
+                        <input type="text" id="buscadorCliente" class="form-control" placeholder="Buscar por nombre, ID, telefono, CI o chapa..." oninput="filtrarClientes()" autocomplete="off">
                         <button class="btn btn-outline-secondary" type="button" id="btnLimpiarDeudas" title="Limpiar" onclick="limpiarBusquedaDeudas()" disabled>
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
+                    <small class="text-muted d-block mt-1">
+                        Busca entre todos los clientes, no solo los que deben.
+                    </small>
                 </div>
                 <div class="list-group list-group-flush" id="listaClientes">
                     {% for c in clientes_con_deuda %}
@@ -109,6 +112,18 @@
                     <span class="badge bg-danger rounded-pill cliente-deuda-badge">${{ "{:,.2f}".format(total_pend_cliente) }}</span>
                 </div>
                 {% if filas_pendientes %}
+                <div class="filtro-tabla">
+                    <span class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscadorPendientes" class="form-control"
+                               placeholder="Filtrar por producto o monto..."
+                               oninput="filtrarTabla('pendientes')" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" title="Limpiar"
+                                onclick="limpiarFiltroTabla('pendientes')" id="btnLimpiarPendientes">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </span>
+                </div>
                 <table class="table table-hover align-middle">
                     <thead>
                         <tr>
@@ -122,7 +137,7 @@
                     </thead>
                     <tbody>
                         {% for f in filas_pendientes %}
-                        <tr class="fila-search fila-pendiente" data-search="{{ (f.producto or '')|lower }} {{ f.cantidad }}">
+                        <tr class="fila-search fila-pendiente">
                             <td class="fw-semibold">{{ f.producto }}</td>
                             <td class="text-end monto-num">{{ "{:,.0f}".format(f.cantidad) }}</td>
                             <td class="text-end monto-num">${{ "{:,.2f}".format(f.precio_unitario) }}</td>
@@ -173,6 +188,18 @@
                 Todas las Deudas Pendientes
             </div>
             <div class="card-body p-0 card-table-wrap">
+                <div class="filtro-tabla">
+                    <span class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscadorGeneral" class="form-control"
+                               placeholder="Filtrar por cliente, deuda, producto o monto..."
+                               oninput="filtrarTabla('general')" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" title="Limpiar"
+                                onclick="limpiarFiltroTabla('general')" id="btnLimpiarGeneral">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </span>
+                </div>
                 <table class="table table-hover mb-0">
                     <thead>
                         <tr>
@@ -187,7 +214,7 @@
                     </thead>
                     <tbody>
                         {% for f in filas_general %}
-                        <tr class="fila-search fila-general" data-search="{{ (f.cliente or '')|lower }} {{ f.deuda_id }} {{ (f.producto or '')|lower }}">
+                        <tr class="fila-search fila-general">
                             <td>{{ f.cliente }}</td>
                             <td class="text-muted monto-num">{{ f.deuda_id }}</td>
                             <td>{{ f.producto }}</td>
@@ -219,6 +246,18 @@
             </div>
             <div class="card-body p-0 card-table-wrap">
                 {% if pagos_recientes %}
+                <div class="filtro-tabla">
+                    <span class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscadorPagos" class="form-control"
+                               placeholder="Filtrar comprobantes por cliente, deuda, producto o metodo..."
+                               oninput="filtrarTabla('pagos')" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" title="Limpiar"
+                                onclick="limpiarFiltroTabla('pagos')" id="btnLimpiarPagos">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </span>
+                </div>
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
@@ -233,7 +272,7 @@
                     </thead>
                     <tbody>
                         {% for p in pagos_recientes %}
-                        <tr class="fila-search fila-pago" data-search="{{ (p.cliente_nombre or 'N/A')|lower }} {{ p.deuda_id }} {{ (p.producto_nombre or '')|lower }}">
+                        <tr class="fila-search fila-pago">
                             <td>{{ p.cliente_nombre or 'N/A' }}</td>
                             <td class="text-muted monto-num">{{ p.deuda_id }}</td>
                             <td>{{ p.producto_nombre }}</td>
@@ -272,45 +311,185 @@
 
 {% block scripts %}
 <script>
+// La lista inicial (clientes con deuda) se guarda para poder volver a ella al
+// limpiar la busqueda, sin volver a recargar la pagina.
+let listaClientesOriginal = null;
+let busquedaClientesTimer = null;
+
+function esc(texto) {
+    const d = document.createElement('div');
+    d.textContent = texto == null ? '' : String(texto);
+    return d.innerHTML;
+}
+
+function itemCliente(c, seleccionado) {
+    const deuda = Number(c.deuda || 0);
+    const badge = deuda > 0
+        ? '<span class="badge bg-danger rounded-pill cliente-deuda-badge">$' + deuda.toLocaleString('es-PY', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>'
+        : '<span class="badge bg-secondary rounded-pill cliente-deuda-badge">Sin deuda</span>';
+    return '<a href="{{ url_for("deudas_page") }}?cliente_id=' + encodeURIComponent(c.id) + '"' +
+        ' class="list-group-item list-group-item-action d-flex justify-content-between align-items-center cliente-item' + (seleccionado ? ' active' : '') + '"' +
+        ' data-nombre="' + esc(c.nombre.toLowerCase()) + '" data-id="' + esc(c.id) + '"' +
+        ' data-telefono="' + esc(c.telefono) + '" data-ci="' + esc(c.ci) + '" data-chapa="' + esc(c.chapa) + '">' +
+        '<div class="w-100"><div class="d-flex justify-content-between align-items-center gap-2">' +
+        '<strong class="text-truncate">' + esc(c.nombre) + '</strong>' + badge + '</div>' +
+        '<small class="text-muted">ID: ' + esc(c.id) +
+        (c.ci ? ' &middot; CI: ' + esc(c.ci) : '') +
+        (c.chapa ? ' &middot; ' + esc(c.chapa) : '') + '</small></div></a>';
+}
+
+// Igual que en /clientes: la consulta va al servidor, que busca sobre TODOS los
+// clientes y ordena el ID exacto primero. Filtrar en el navegador solo barrieria
+// los que ya venian en la pagina, y de ahi que un cliente no apareciera.
 function filtrarClientes() {
-    const q = document.getElementById('buscadorCliente').value.toLowerCase();
+    clearTimeout(busquedaClientesTimer);
+    busquedaClientesTimer = setTimeout(buscarClientesDeudas, 220);
+}
+
+async function buscarClientesDeudas() {
+    const input = document.getElementById('buscadorCliente');
+    const q = input.value.trim();
+    const lista = document.getElementById('listaClientes');
+    if (!lista) return;
+
     document.getElementById('btnLimpiarDeudas').disabled = !q;
 
-    const items = document.querySelectorAll('.cliente-item');
-    let visibles = 0;
-    items.forEach(item => {
-        const texto = [
-            item.dataset.nombre || '',
-            item.dataset.id || '',
-            item.dataset.telefono || '',
-            item.dataset.ci || '',
-            item.dataset.chapa || ''
-        ].join(' ');
-        const match = !q || texto.includes(q);
-        item.classList.toggle('oculto', !match);
-        if (match) visibles++;
-    });
-    document.getElementById('sinResultados').classList.toggle('d-none', visibles > 0);
-    document.getElementById('contadorClientes').textContent = visibles;
+    if (listaClientesOriginal === null) listaClientesOriginal = lista.innerHTML;
+    if (!q) {
+        lista.innerHTML = listaClientesOriginal;
+        actualizarContadorClientes();
+        return;
+    }
 
-    [['fila-pendiente', 'sinPendientes'], ['fila-general', 'sinGeneral'], ['fila-pago', 'sinPagos']].forEach(pair => {
-        const filas = document.querySelectorAll('.' + pair[0]);
-        const vacio = document.getElementById(pair[1]);
-        if (!filas.length || !vacio) return;
-        let vis = 0;
-        filas.forEach(tr => {
-            const match = !q || (tr.dataset.search || '').includes(q);
-            tr.classList.toggle('oculto', !match);
-            if (match) vis++;
-        });
-        vacio.classList.toggle('d-none', vis > 0);
+    try {
+        const res = await fetch('/deudas/buscar?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        const filas = data.rows || [];
+        const seleccionado = '{{ selected_cliente|string }}';
+        lista.innerHTML = filas.length
+            ? filas.map(c => itemCliente(c, String(c.id) === seleccionado)).join('')
+            : '';
+        actualizarContadorClientes(filas.length);
+        document.getElementById('sinResultados').classList.toggle('d-none', filas.length > 0);
+    } catch (err) {
+        lista.innerHTML = listaClientesOriginal;
+        actualizarContadorClientes();
+    }
+}
+
+function actualizarContadorClientes(total) {
+    const cont = document.getElementById('contadorClientes');
+    if (!cont) return;
+    cont.textContent = total != null
+        ? total
+        : document.querySelectorAll('#listaClientes .cliente-item').length;
+}
+
+// Cada tabla tiene su propio buscador y filtra mientras se escribe. Antes las
+// tres se filtraban con el texto del buscador de clientes de la izquierda, que
+// hacia cosas raras: buscar un nombre tapaba filas de otros clientes en la tabla
+// de "todas las deudas", y buscar un ID de cliente no encontraba su Deuda #.
+const FILTROS_TABLA = {
+    pendientes: {input: 'buscadorPendientes', boton: 'btnLimpiarPendientes', fila: 'fila-pendiente', vacio: 'sinPendientes'},
+    general:    {input: 'buscadorGeneral',    boton: 'btnLimpiarGeneral',    fila: 'fila-general',    vacio: 'sinGeneral'},
+    pagos:      {input: 'buscadorPagos',      boton: 'btnLimpiarPagos',      fila: 'fila-pago',       vacio: 'sinPagos'},
+};
+
+// El indice se arma una vez con el texto de cada celda y se guarda aparte del
+// DOM. Leer el texto de la fila en el momento de filtrar no sirve: una fila ya
+// oculta devuelve cadena vacia y el filtro se comeria los resultados.
+const INDICE_TABLA = {};
+const TIMER_TABLA = {};
+
+// Sin acentos y en minuscula, para que "belinda" encuentre "Belínda", igual que
+// hace el buscador de clientes contra la base.
+function normalizar(texto) {
+    return String(texto == null ? '' : texto)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+// version sin $, sin puntos ni comas: para que escribir 1540 encuentre "1.540,00"
+function cifra(texto) {
+    return normalizar(texto).replace(/[.,$\s]/g, '');
+}
+
+function armarIndice(clave) {
+    const cfg = FILTROS_TABLA[clave];
+    INDICE_TABLA[clave] = new Map();
+    if (!cfg || !document.getElementById(cfg.input)) return;
+    document.querySelectorAll('.' + cfg.fila).forEach(tr => {
+        const celdas = Array.from(tr.children).map(td => td.textContent).join(' ');
+        INDICE_TABLA[clave].set(tr, {texto: normalizar(celdas), compacto: cifra(celdas)});
     });
 }
+
+function filtrarTabla(clave) {
+    const cfg = FILTROS_TABLA[clave];
+    if (!cfg) return;
+    clearTimeout(TIMER_TABLA[clave]);
+    TIMER_TABLA[clave] = setTimeout(() => aplicarFiltro(clave), 120);
+}
+
+function aplicarFiltro(clave) {
+    const cfg = FILTROS_TABLA[clave];
+    if (!cfg) return;
+    const input = document.getElementById(cfg.input);
+    if (!input) return;
+    const q = normalizar(input.value).trim();
+    const indice = INDICE_TABLA[clave] || new Map();
+    const busquedaCompacta = cifra(input.value).trim();
+    const boton = document.getElementById(cfg.boton);
+    if (boton) boton.disabled = !q;
+
+    let visibles = 0;
+    document.querySelectorAll('.' + cfg.fila).forEach(tr => {
+        const dato = indice.get(tr);
+        // Con el indice ya armado, una fila vacia en el mapa no deberia pasar;
+        // si pasa, se muestra en vez de esconderla a ciegas.
+        const coincide = !q || (dato
+            ? (dato.texto.includes(q) || (!!busquedaCompacta && dato.compacto.includes(busquedaCompacta)))
+            : true);
+        tr.classList.toggle('oculto', !coincide);
+        if (coincide) visibles++;
+    });
+
+    const vacio = document.getElementById(cfg.vacio);
+    const total = document.querySelectorAll('.' + cfg.fila).length;
+    // Con texto vacio no se avisa: la tabla ya tiene su propio "no hay deudas".
+    if (vacio) vacio.classList.toggle('d-none', !q || visibles > 0 || total === 0);
+}
+
+function limpiarFiltroTabla(clave) {
+    const cfg = FILTROS_TABLA[clave];
+    if (!cfg) return;
+    const input = document.getElementById(cfg.input);
+    if (input) input.value = '';
+    clearTimeout(TIMER_TABLA[clave]);
+    aplicarFiltro(clave);
+    if (input) input.focus();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    Object.keys(FILTROS_TABLA).forEach(armarIndice);
+    // Escape limpia la tabla: se sigue esperando "todo", no "nada".
+    Object.keys(FILTROS_TABLA).forEach(clave => {
+        const input = document.getElementById(FILTROS_TABLA[clave].input);
+        if (input) input.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape') limpiarFiltroTabla(clave);
+        });
+    });
+});
 
 function limpiarBusquedaDeudas() {
     document.getElementById('buscadorCliente').value = '';
     document.getElementById('btnLimpiarDeudas').disabled = true;
-    filtrarClientes();
+    clearTimeout(busquedaClientesTimer);
+    const lista = document.getElementById('listaClientes');
+    if (lista && listaClientesOriginal !== null) lista.innerHTML = listaClientesOriginal;
+    actualizarContadorClientes();
+    document.getElementById('sinResultados').classList.add('d-none');
 }
 
 function crearToast(tipo, html) {

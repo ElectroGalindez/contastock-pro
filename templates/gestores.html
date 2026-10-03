@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+{% block title %}Gestores - ContaStock Pro{% endblock %}
+{% block page_title %}Gestores de Venta{% endblock %}
+{% block content %}
+
+<div class="alert alert-info d-flex align-items-start gap-2">
+    <i class="bi bi-info-circle-fill fs-5"></i>
+    <div>
+        Marcá como gestor a los clientes que traen ventas y se les paga comisión.
+        <strong>Un gestor sigue siendo un cliente</strong>: puede comprar, deber,
+        aparecer en las ventas y en el registro de deudas igual que cualquier otro.
+        Acá solo se le pone la etiqueta para poder identificarlo y filtrarlo.
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="busquedaGestor"
+                           placeholder="Buscar por nombre, ID, telefono, CI o chapa..."
+                           value="{{ q }}" autocomplete="off">
+                </div>
+            </div>
+            <div class="col-md-3">
+                {# el rango y el "ver todo" se arrastran al cambiar de vista #}
+                {% set comunes = dict(q=q) %}
+                {% if ver_todo %}
+                    {% set comunes = dict(comunes, todo=1) %}
+                {% else %}
+                    {% set comunes = dict(comunes, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin) %}
+                {% endif %}
+                <div class="btn-group w-100" role="group">
+                    <a href="{{ url_for('gestores_page', **comunes) }}"
+                       class="btn btn-outline-secondary {% if not solo_gestores %}active{% endif %}">
+                        Todos ({{ total_clientes }})
+                    </a>
+                    <a href="{{ url_for('gestores_page', vista='gestores', **comunes) }}"
+                       class="btn btn-outline-warning {% if solo_gestores %}active{% endif %}">
+                        Solo gestores ({{ total_gestores }})
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-auto ms-auto d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark fs-6">
+                    <i class="bi bi-person-badge-fill"></i> {{ total_gestores }} gestores
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="{{ url_for('gestores_page') }}" class="row g-2 align-items-end"
+              id="formRangoGestores">
+            {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+            {% if solo_gestores %}<input type="hidden" name="vista" value="gestores">{% endif %}
+            <div class="col-auto">
+                <label class="form-label small mb-0" for="fechaInicioGestor">Desde</label>
+                <input type="date" class="form-control form-control-sm" id="fechaInicioGestor"
+                       name="fecha_inicio" value="{{ fecha_inicio }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label small mb-0" for="fechaFinGestor">Hasta</label>
+                <input type="date" class="form-control form-control-sm" id="fechaFinGestor"
+                       name="fecha_fin" value="{{ fecha_fin }}">
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <button class="btn btn-sm btn-primary" type="submit">
+                    <i class="bi bi-funnel"></i> Filtrar
+                </button>
+                {% if ver_todo %}
+                <a href="{{ url_for('gestores_page', q=q, vista='gestores' if solo_gestores else none) }}"
+                   class="btn btn-sm btn-outline-secondary" id="btnVerTodo">
+                    <i class="bi bi-calendar3"></i> Ver todo
+                </a>
+                {% else %}
+                <a href="{{ url_for('gestores_page', q=q, todo=1,
+                                     vista='gestores' if solo_gestores else none) }}"
+                   class="btn btn-sm btn-outline-secondary" id="btnVerTodo">
+                    <i class="bi bi-clock-history"></i> Ver todo
+                </a>
+                {% endif %}
+            </div>
+            <div class="col-auto ms-auto">
+                <span class="text-muted small" id="avisoRango">
+                    {% if ver_todo %}
+                    Mostrando todo el historial del gestor.
+                    {% else %}
+                    Mostrando las ventas del
+                    <strong>{{ fecha_inicio }}</strong> al <strong>{{ fecha_fin }}</strong>.
+                    {% endif %}
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if not solo_gestores %}
+<div class="card mb-3" id="barraMasiva" style="display:none">
+    <div class="card-body d-flex flex-wrap align-items-center gap-2 py-2">
+        <span class="fw-semibold"><span id="selCount">0</span> seleccionados</span>
+        <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-warning" onclick="aplicarMasivo(true)">
+                <i class="bi bi-person-badge-fill"></i> Marcar como gestores
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="aplicarMasivo(false)">
+                <i class="bi bi-person-dash-fill"></i> Quitar marca
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body p-0 card-table-wrap">
+        <table class="table table-hover align-middle mb-0" id="tablaGestores">
+            <thead>
+                <tr>
+                    {% if not solo_gestores %}
+                    <th style="width:36px">
+                        <input class="form-check-input" type="checkbox" id="seleccionarTodos"
+                               title="Seleccionar los que se ven" onchange="seleccionarTodos(this)">
+                    </th>
+                    {% endif %}
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Telefono</th>
+                    <th>CI</th>
+                    <th>Chapa</th>
+                    <th class="text-end">Ventas</th>
+                    <th class="text-end">Vendido</th>
+                    <th class="text-end">Pendiente</th>
+                    <th class="text-center">Gestor</th>
+                    <th class="text-center">Ver ventas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in clientes %}
+                {% set r = resumen_gestores.get(c.id) %}
+                <tr data-id="{{ c.id }}"
+                    data-buscar="{{ (c.nombre ~ ' ' ~ (c.id|string) ~ ' ' ~ (c.telefono or '') ~ ' ' ~ (c.ci or '') ~ ' ' ~ (c.chapa or ''))|lower }}">
+                    {% if not solo_gestores %}
+                    <td>
+                        <input class="form-check-input sel-gestor" type="checkbox"
+                               value="{{ c.id }}" onchange="actualizarSeleccion()">
+                    </td>
+                    {% endif %}
+                    <td class="text-muted">{{ c.id }}</td>
+                    <td class="fw-semibold">{{ c.nombre }}</td>
+                    <td>{{ c.telefono or '' }}</td>
+                    <td>{{ c.ci or '' }}</td>
+                    <td>{{ c.chapa or '' }}</td>
+                    <td class="text-end">{{ r.ventas if r else 0 }}</td>
+                    <td class="text-end">
+                        {% if r %}${{ "{:,.0f}".format(r.total) }}{% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if r and r.pendiente > 0 %}
+                        <span class="text-danger fw-semibold">${{ "{:,.0f}".format(r.pendiente) }}</span>
+                        {% elif r %}
+                        <span class="text-muted">—</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <div class="form-check form-switch d-inline-block">
+                            <input class="form-check-input toggle-gestor" type="checkbox"
+                                   id="gestor{{ c.id }}" data-id="{{ c.id }}"
+                                   data-nombre="{{ c.nombre }}"
+                                   {% if c.es_gestor %}checked{% endif %}
+                                   onchange="cambiarGestor(this)">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-secondary btn-icon"
+                                type="button" id="btnVentas{{ c.id }}"
+                                data-id="{{ c.id }}" data-nombre="{{ c.nombre }}"
+                                aria-expanded="false"
+                                onclick="toggleVentasGestor({{ c.id }})"
+                                title="Ver las ventas que trajo {{ c.nombre }}">
+                            <i class="bi bi-receipt"></i>
+                        </button>
+                    </td>
+                </tr>
+                <tr id="ventasGestor{{ c.id }}" class="detalle-gestor d-none">
+                    <td colspan="{{ 9 if solo_gestores else 10 }}"></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="{{ 9 if solo_gestores else 10 }}" class="text-center text-muted py-4">
+                        No hay clientes para mostrar.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<p class="text-muted small">
+    <span id="contadorVisibles">{{ clientes|length }}</span> de {{ clientes|length }}
+    cliente{{ 's' if clientes|length != 1 }} en pantalla.
+    Con el buscador y los filtros no se pierde ninguno de los {{ total_gestores }} gestores.
+</p>
+
+<script>
+const TOTAL_GESTORES = {{ total_gestores }};
+
+function seleccionados() {
+    return Array.from(document.querySelectorAll('.sel-gestor:checked')).map(function (c) { return c.value; });
+}
+
+function actualizarSeleccion() {
+    const sel = seleccionados();
+    document.getElementById('selCount').textContent = sel.length;
+    document.getElementById('barraMasiva').style.display = sel.length ? 'flex' : 'none';
+}
+
+function seleccionarTodos(caja) {
+    // solo marca las filas que se ven: si no, el buscador terminaria
+    // marcando clientes que ni estan en pantalla
+    document.querySelectorAll('.sel-gestor').forEach(function (c) {
+        c.checked = caja.checked && c.closest('tr').style.display !== 'none';
+    });
+    actualizarSeleccion();
+}
+
+async function aplicarMasivo(es_gestor) {
+    const ids = seleccionados();
+    if (!ids.length) return;
+    const barra = document.getElementById('barraMasiva');
+    try {
+        const r = await fetch('/api/gestores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+            body: JSON.stringify({ cliente_ids: ids.map(Number), es_gestor: es_gestor })
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'No se pudo aplicar');
+
+        ids.forEach(function (id) {
+            const sw = document.querySelector('.toggle-gestor[data-id="' + id + '"]');
+            if (sw) sw.checked = es_gestor;
+        });
+        actualizarContador(j.total_gestores);
+        actualizarSeleccion();
+        if (es_gestor) {
+            avisar('Marcados ' + j.actualizados + ' cliente(s) como gestores.');
+        } else {
+            avisar('Se quito la marca a ' + j.actualizados + ' cliente(s).');
+        }
+    } catch (e) {
+        avisar('Error: ' + e.message, true);
+    }
+}
+
+async function cambiarGestor(caja) {
+    const id = Number(caja.dataset.id);
+    const nombre = caja.dataset.nombre;
+    const marcado = caja.checked;
+    try {
+        const r = await fetch('/api/gestores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+            body: JSON.stringify({ cliente_id: id, es_gestor: marcado })
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'No se pudo cambiar');
+        actualizarContador(j.total_gestores);
+        avisar(marcado
+            ? nombre + ' quedo como gestor.'
+            : 'Se quito la marca de gestor a ' + nombre + '.');
+    } catch (e) {
+        caja.checked = !marcado;   // vuelve al valor anterior
+        avisar('Error: ' + e.message, true);
+    }
+}
+
+function actualizarContador(n) {
+    TOTAL_GESTORES = n;
+    document.querySelectorAll('.badge.bg-warning.text-dark').forEach(function (b) {
+        b.innerHTML = '<i class="bi bi-person-badge-fill"></i> ' + n + ' gestores';
+    });
+    document.querySelectorAll('a[href*="vista=gestores"]').forEach(function (a) {
+        a.textContent = a.textContent.replace(/\(\d+\)/, '(' + n + ')');
+    });
+}
+
+let avisoTimer = null;
+
+// ----------------------------
+// Las ventas que trajo cada gestor
+// ----------------------------
+const VER_TODO = {{ 'true' if ver_todo else 'false' }};
+const FECHA_INICIO = {{ fecha_inicio|tojson }};
+const FECHA_FIN = {{ fecha_fin|tojson }};
+
+// La cache va por gestor Y por rango: con la misma clave, cambiar de fecha
+// seguia mostrando la lista del rango anterior.
+const ventasCargadas = {};
+
+function claveRangoGestor(id) {
+    return id + '|' + (VER_TODO ? 'todo' : FECHA_INICIO + '_' + FECHA_FIN);
+}
+
+function escaparGestor(valor) {
+    const d = document.createElement('div');
+    d.textContent = valor == null ? '' : String(valor);
+    return d.innerHTML;
+}
+
+function dineroGestor(n) {
+    return Number(n || 0).toLocaleString('en-US',
+        { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function dibujarVentasGestor(celda, nombre, filas) {
+    if (!filas.length) {
+        celda.innerHTML = '<div class="text-muted py-2">'
+            + escaparGestor(nombre) + ' todavia no trajo ninguna venta.</div>';
+        return;
+    }
+    let total = 0, pendiente = 0;
+    let html = '<div class="table-responsive"><table class="table table-sm mb-0'
+        + ' tabla-detalle-venta">'
+        + '<thead><tr><th>#</th><th>Fecha</th><th>Cliente</th>'
+        + '<th class="text-end">Total</th><th class="text-end">Pagado</th>'
+        + '<th>Estado</th></tr></thead><tbody>';
+    filas.forEach(function (v) {
+        total += v.total;
+        pendiente += v.pendiente;
+        const fecha = v.fecha && v.fecha.length >= 16
+            ? v.fecha.slice(8, 10) + '/' + v.fecha.slice(5, 7) + '/' + v.fecha.slice(0, 4) + ' ' + v.fecha.slice(11, 16)
+            : (v.fecha || '');
+        const estado = v.estado === 'Pagada'
+            ? '<span class="badge bg-success">Pagada</span>'
+            : '<span class="badge bg-warning text-dark">Pendiente</span>';
+        html += '<tr>'
+            + '<td class="text-muted">#' + v.id + '</td>'
+            + '<td>' + escaparGestor(fecha) + '</td>'
+            + '<td>' + escaparGestor(v.cliente_nombre) + '</td>'
+            + '<td class="text-end">$' + dineroGestor(v.total) + '</td>'
+            + '<td class="text-end">$' + dineroGestor(v.pagado) + '</td>'
+            + '<td>' + estado + '</td>'
+            + '</tr>';
+    });
+    html += '</tbody><tfoot><tr><th colspan="3" class="text-end">'
+        + filas.length + ' venta(s)</th>'
+        + '<th class="text-end">$' + dineroGestor(total) + '</th>'
+        + '<th class="text-end">' + (pendiente > 0
+            ? '<span class="text-danger">$' + dineroGestor(pendiente) + '</span>'
+            : '<span class="text-muted">—</span>') + '</th>'
+        + '<th></th></tr></tfoot></table></div>';
+    celda.innerHTML = html;
+}
+
+async function toggleVentasGestor(id) {
+    const fila = document.getElementById('ventasGestor' + id);
+    const btn = document.getElementById('btnVentas' + id);
+    if (!fila || !btn) return;
+
+    if (!fila.classList.contains('d-none')) {      // estaba abierta: cierra
+        fila.classList.add('d-none');
+        btn.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    fila.classList.remove('d-none');
+    btn.setAttribute('aria-expanded', 'true');
+
+    const celda = fila.firstElementChild;
+    const clave = claveRangoGestor(id);
+    if (ventasCargadas[clave]) {
+        dibujarVentasGestor(celda, btn.dataset.nombre, ventasCargadas[clave]);
+        return;
+    }
+    celda.innerHTML = '<div class="text-muted py-2">Cargando ventas...</div>';
+    try {
+        const rango = VER_TODO
+            ? 'todo=1'
+            : 'fecha_inicio=' + encodeURIComponent(FECHA_INICIO)
+              + '&fecha_fin=' + encodeURIComponent(FECHA_FIN);
+        const r = await fetch('/api/gestores/' + id + '/ventas?' + rango);
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'No se pudieron cargar');
+        ventasCargadas[clave] = j.ventas || [];
+        dibujarVentasGestor(celda, btn.dataset.nombre, ventasCargadas[clave]);
+    } catch (e) {
+        celda.innerHTML = '<div class="text-danger py-2">Error: '
+            + escaparGestor(e.message) + '</div>';
+    }
+}
+function avisar(texto, error) {
+    let box = document.getElementById('avisoGestores');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'avisoGestores';
+        box.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:1080;max-width:360px';
+        document.body.appendChild(box);
+    }
+    // El texto lleva el nombre del cliente, que es dato del usuario: si se
+    // armara la alerta con innerHTML, un nombre con "<img onerror=...>" se
+    // ejecutaria. Se arma el div y el texto va por textContent.
+    box.textContent = '';
+    const alerta = document.createElement('div');
+    alerta.className = 'alert alert-' + (error ? 'danger' : 'success')
+        + ' shadow-sm py-2 px-3 mb-0';
+    alerta.textContent = texto;
+    box.appendChild(alerta);
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(function () { box.textContent = ''; }, 3200);
+}
+
+let timerBusqueda = null;
+const inputBusqueda = document.getElementById('busquedaGestor');
+
+// Los clientes ya estan todos en la tabla, asi que se filtran en el navegador:
+// con ~2000 clientes un viaje al servidor por cada tecla se siente lento.
+function normaliza(s) {
+    return (s || '').toLowerCase().normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function filtrarGestores() {
+    const q = normaliza(inputBusqueda.value);
+    let visibles = 0;
+    document.querySelectorAll('#tablaGestores tbody tr[data-id]').forEach(function (fila) {
+        if (q.length > 1) {
+            const heno = normaliza(fila.dataset.buscar || fila.textContent);
+            fila.style.display = heno.includes(q) ? '' : 'none';
+        } else {
+            fila.style.display = '';
+        }
+        // la fila de ventas va aparte en el DOM, asi que hay que ocultarla
+        // junto con su cliente o queda colgando de una fila invisible
+        const detalle = document.getElementById('ventasGestor' + fila.dataset.id);
+        if (detalle && fila.style.display === 'none') detalle.classList.add('d-none');
+        if (fila.style.display !== 'none') visibles++;
+    });
+    document.getElementById('contadorVisibles').textContent = visibles;
+    // las cajas de los que quedaron ocultos no cuentan como seleccionados
+    document.querySelectorAll('.sel-gestor').forEach(function (c) {
+        if (c.closest('tr').style.display === 'none') c.checked = false;
+    });
+    actualizarSeleccion();
+}
+
+inputBusqueda.addEventListener('input', function () {
+    clearTimeout(timerBusqueda);
+    timerBusqueda = setTimeout(filtrarGestores, 120);
+});
+</script>
+{% endblock %}
