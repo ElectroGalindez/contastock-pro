@@ -85,16 +85,17 @@ no se puede modificar nada.
 ```
 NEON_SYNC=1                   # sin esto no sube nada (la PC de desarrollo NO lo lleva)
 NEON_DATABASE_URL=postgresql://...
-NEON_SYNC_MINUTOS=30          # cada cuántos minutos sube (0 = nunca por intervalo)
+NEON_SYNC_MINUTOS=5           # revisión periódica, además de subir al guardar (0 = no)
 NEON_SYNC_HORAS=13:00,19:30   # opcional: además, a estas horas fijas
 ```
 
-Para gastar lo mínimo del plan gratis de Neon: solo se suben las filas que
-cambiaron, si no cambió nada no se conecta, y no deja conexiones abiertas.
-En el panel de Neon conviene fijar el tamaño de cómputo en **0.25 CU**
-(mínimo y máximo), que es lo que más rinde las 100 CU-horas del mes.
+Sube **en cuanto se guarda algo** (venta, pago, cliente...): a los ~4
+segundos ya está en Neon. Solo sube las filas que cambiaron, si no cambió
+nada no se conecta, y no deja conexiones abiertas. En el panel de Neon
+conviene fijar el tamaño de cómputo en **0.25 CU** (mínimo y máximo), que es
+lo que más rinde las 100 CU-horas del mes.
 
-Sube al abrir la app y después según lo configurado. En la barra lateral se
+También sube al abrir la app. En la barra lateral se
 ve cuándo fue la última subida, y el admin tiene un botón para subir en ese
 momento.
 

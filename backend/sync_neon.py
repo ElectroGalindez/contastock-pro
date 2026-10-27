@@ -13,14 +13,15 @@ Cómo se evita dañar datos cuando se corta la conexión:
   mitad, Postgres hace rollback y Neon se queda con la copia anterior
   completa, nunca con una a medias.
 
-Cómo se gasta lo menos posible del plan gratis de Neon (100 CU-horas al mes):
-lo que consume es el tiempo que Neon está despierto, y cada vez que se lo
-despierta queda encendido al menos 5 minutos. Por eso:
+Cuándo sube: en cuanto la app guarda algo (venta, pago, cliente...), la
+ruta avisa con avisar_cambio() y a los pocos segundos se sube, agrupando
+los cambios que lleguen juntos. Además, cada NEON_SYNC_MINUTOS se revisa por
+si algo cambió por otro lado (scripts), y si falló por falta de internet se
+reintenta a los 2 minutos.
 
+Para no gastar de más del plan de Neon:
 - Si nada cambió desde la última subida, no se conecta (no lo despierta).
-- Solo se suben las filas nuevas, cambiadas o borradas, no la base entera:
-  la subida dura un instante y casi no escribe historial en Neon.
-- Por defecto sube cada 30 minutos, y el "sigo conectado" va cada 2 horas.
+- Solo se suben las filas nuevas, cambiadas o borradas, no la base entera.
 - Las conexiones se cierran al terminar (una conexión abierta puede impedir
   que Neon se duerma).
 - Si la base local parece vacía o mucho más chica que Neon (por ejemplo, la
@@ -30,7 +31,7 @@ despierta queda encendido al menos 5 minutos. Por eso:
 Configuración (.env) — SOLO en la PC del almacén:
     NEON_SYNC=1                          # sin esto no sube nada, aunque esté la URL
     NEON_DATABASE_URL=postgresql://...
-    NEON_SYNC_MINUTOS=30                 # cada cuántos minutos (0 = desactivado)
+    NEON_SYNC_MINUTOS=5                  # revisión periódica además de los avisos (0 = no)
     NEON_SYNC_HORAS=13:00,19:30          # además, a estas horas fijas (opcional)
 """
 import hashlib
@@ -63,12 +64,15 @@ TABLAS = [
 ]
 LOTE = 1000
 TIMEOUT_CONEXION = 15        # segundos para darse cuenta de que no hay internet
-REINTENTO_MIN = 5            # tras un fallo, reintentar a los 5 minutos
+REINTENTO_MIN = 2            # tras un fallo (sin internet), reintentar a los 2 minutos
+ESPERA_AGRUPAR = 4           # segundos sin cambios nuevos antes de subir
+ESPERA_MAX = 20              # aunque sigan llegando cambios, subir a los 20 s
 LATIDO_MIN = 120             # sin cambios, avisar a Neon "sigo conectado" cada 2 h
-MINUTOS_DEFECTO = 30
+MINUTOS_DEFECTO = 5
 
 _lock = threading.Lock()
 _hilo = None
+_cambio = threading.Event()   # la app avisa que guardó algo
 
 
 # ======================================================
@@ -552,24 +556,41 @@ def toca_ahora(ahora: datetime, ultima: datetime | None, minutos: int,
     return False
 
 
+def avisar_cambio() -> None:
+    """La app guardó algo: subirlo enseguida (lo usa app.py tras cada POST)."""
+    if _hilo is not None:
+        _cambio.set()
+
+
+def _esperar_que_se_calme() -> None:
+    """Una venta guarda varias cosas seguidas (venta, deuda, log...): se
+    espera a que pasen unos segundos sin avisos para subir todo junto."""
+    inicio = time.monotonic()
+    while time.monotonic() - inicio < ESPERA_MAX:
+        _cambio.clear()
+        if not _cambio.wait(ESPERA_AGRUPAR):
+            return
+
+
 def _bucle():
     minutos, horas = _minutos_config(), horas_config()
     ultima, fallo = None, False
     while True:
+        # al abrir la app sube enseguida; después, cada 30 s mira si hay avisos
+        avisado = _cambio.wait(30 if ultima else 0)
+        if avisado:
+            _esperar_que_se_calme()
         ahora = datetime.now()
-        if toca_ahora(ahora, ultima, minutos, horas, fallo):
+        if avisado or toca_ahora(ahora, ultima, minutos, horas, fallo):
             estado = sincronizar()
             ultima = ahora
             fallo = estado.get("resultado") == "error"
-        time.sleep(30)
 
 
 def iniciar_automatica() -> bool:
     """Arranca el hilo de sincronización si hay algo que programar."""
     global _hilo
     if not configurada() or (_hilo and _hilo.is_alive()):
-        return False
-    if not _minutos_config() and not horas_config():
         return False
     _hilo = threading.Thread(target=_bucle, name="sync-neon", daemon=True)
     _hilo.start()

@@ -203,3 +203,46 @@ def test_neon_sync_1_activa_la_subida(monkeypatch):
     monkeypatch.setenv("NEON_DATABASE_URL", "postgresql+psycopg2://u:p@127.0.0.1:1/x")
     monkeypatch.setenv("NEON_SYNC", "1")
     assert sync_neon.configurada() is True
+
+
+# ------------------------------------------------------
+# Subir en cuanto hay cambios
+# ------------------------------------------------------
+def test_guardar_algo_avisa_para_subir(monkeypatch):
+    avisos = []
+    monkeypatch.setattr(sync_neon, "avisar_cambio", lambda: avisos.append(1))
+    app = create_app()
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        with c.session_transaction() as s:
+            s["usuario"] = {"id": 1, "username": "admin", "rol": "admin"}
+        c.get("/dashboard")
+        assert avisos == []            # mirar no sube nada
+        c.post("/clientes", data={"action": "crear", "nombre": "Nuevo"})
+        assert avisos == [1]           # guardar sí
+
+
+def test_cambios_seguidos_se_suben_juntos(monkeypatch):
+    """Una venta guarda venta + deuda + log: una sola subida, no tres."""
+    import threading
+    import time
+    monkeypatch.setattr(sync_neon, "ESPERA_AGRUPAR", 0.2)
+    monkeypatch.setattr(sync_neon, "ESPERA_MAX", 5)
+    sync_neon._cambio.clear()
+
+    def avisos():
+        for _ in range(3):
+            time.sleep(0.05)
+            sync_neon._cambio.set()
+    threading.Thread(target=avisos).start()
+    inicio = time.monotonic()
+    sync_neon._esperar_que_se_calme()
+    # esperó a que dejaran de llegar avisos, pero no de más
+    assert 0.3 < time.monotonic() - inicio < 2
+
+
+def test_aviso_sin_subida_activa_no_hace_nada(monkeypatch):
+    monkeypatch.setattr(sync_neon, "_hilo", None)
+    sync_neon._cambio.clear()
+    sync_neon.avisar_cambio()
+    assert not sync_neon._cambio.is_set()

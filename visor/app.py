@@ -10,7 +10,7 @@ Variables de entorno:
     VISOR_SECRET_KEY     clave para firmar la sesión (obligatoria en el hosting)
     VISOR_ROLES          roles que pueden entrar, por defecto "admin"
     VISOR_TZ             zona horaria del almacén, por defecto America/Havana
-    VISOR_CACHE_MIN      minutos que se reusan los datos sin preguntar a Neon (15)
+    VISOR_CACHE_MIN      minutos que se reusan los datos sin preguntar a Neon (0)
 
 Local:  python visor/app.py   ->  http://127.0.0.1:5600
 """
@@ -126,10 +126,10 @@ def create_app():
         except ValueError:
             return None
 
-    # Memoria intermedia: el almacén sube como mucho cada 30 min, así que
-    # preguntar a Neon en cada recarga solo lo mantiene despierto (y eso es lo
-    # que gasta el plan gratis). Varias personas mirando comparten la misma.
-    cache_seg = max(int(os.getenv("VISOR_CACHE_MIN", "15")), 0) * 60
+    # Por defecto cada apertura lee Neon al momento (VISOR_CACHE_MIN=0). Lo
+    # guardado solo se usa si Neon no responde: mejor algo de hace un rato
+    # que una pantalla vacía.
+    cache_seg = max(int(os.getenv("VISOR_CACHE_MIN", "0")), 0) * 60
     cache, cache_lock = {}, threading.Lock()
 
     def _api(funcion, *args):

@@ -172,3 +172,15 @@ def test_resumen_por_producto_del_dia(producto):
     assert filas[0] == {"nombre": "Fogón", "cantidad": 4.0, "total": 40.0, "ventas": 2}
     assert filas[1] == {"nombre": producto["nombre"], "cantidad": 2.0, "total": 20.0, "ventas": 1}
     assert datos.ventas_del_dia(date(2000, 1, 1))["por_producto"] == []
+
+
+def test_cada_apertura_lee_neon_al_momento(cliente_web, monkeypatch):
+    """Sin memoria intermedia: dos aperturas seguidas = dos lecturas."""
+    _usuario("jefe", "clave123")
+    cliente_web.post("/login", data={"username": "jefe", "password": "clave123"})
+    lecturas = []
+    original = datos.inventario
+    monkeypatch.setattr(datos, "inventario", lambda: lecturas.append(1) or original())
+    cliente_web.get("/api/inventario")
+    cliente_web.get("/api/inventario")
+    assert len(lecturas) == 2

@@ -113,6 +113,14 @@ def create_app():
     )
     app.config["SOLO_LECTURA"] = solo_lectura
 
+    @app.after_request
+    def subir_cambios_a_neon(resp):
+        # Guardó algo: que la PC del almacén lo suba a Neon enseguida (en las
+        # demás PCs no hace nada: la subida solo corre con NEON_SYNC=1)
+        if request.method in ("POST", "PUT", "DELETE", "PATCH") and resp.status_code < 400:
+            sync_neon.avisar_cambio()
+        return resp
+
     @app.before_request
     def bloquear_cambios_en_solo_lectura():
         if not app.config["SOLO_LECTURA"] or request.method in ("GET", "HEAD", "OPTIONS"):

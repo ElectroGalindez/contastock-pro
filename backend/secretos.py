@@ -52,7 +52,13 @@ def leer() -> dict:
     clave = _clave()
     if not ARCHIVO.exists() or not clave:
         return {}
-    from cryptography.fernet import Fernet, InvalidToken
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+    except ImportError:
+        # la app tiene que abrir igual: solo se queda sin la URL de Neon
+        log.warning("Falta 'cryptography' (pip install -r requirements.txt): "
+                    "no se lee .env.cifrado")
+        return {}
     try:
         texto = Fernet(clave).decrypt(ARCHIVO.read_bytes().strip()).decode()
     except (InvalidToken, ValueError):

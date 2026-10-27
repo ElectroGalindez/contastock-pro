@@ -7,7 +7,8 @@ que la PC del almacén sube a Neon (ver `backend/sync_neon.py`).
 - No puede modificar nada: no tiene formularios de cambio y cada consulta corre
   en una transacción `READ ONLY` de Postgres.
 - Por defecto solo entran usuarios con rol `admin` (los mismos de la app).
-- Se actualiza solo cada minuto mientras la pantalla está a la vista, y arriba
+- Lee Neon al momento cada vez que se abre o se vuelve a la app, y cada
+  minuto mientras está a la vista. Arriba
   muestra hace cuánto se conectó el almacén por última vez.
 
 ## Publicarlo en internet (Render, gratis)

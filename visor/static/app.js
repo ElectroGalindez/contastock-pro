@@ -3,7 +3,7 @@
 (function () {
     'use strict';
 
-    var REFRESCO_MS = 5 * 60000;   // el servidor guarda los datos 15 min igual
+    var REFRESCO_MS = 60000;   // con la app a la vista; al abrirla se lee al instante
     var VIEJO_MIN = 150;  // el almacén avisa cada 2 h aunque no haya cambios
     var vista = 'resumen';
     var cache = {};
@@ -265,6 +265,8 @@
     // despertar a Neon cuando nadie mira.
     setInterval(function () { if (!document.hidden) cargar(); }, REFRESCO_MS);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) cargar(); });
+    // iPhone: al volver a la app instalada la página sale de memoria sin recargar
+    window.addEventListener('pageshow', function (e) { if (e.persisted) cargar(); });
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(function () {});
