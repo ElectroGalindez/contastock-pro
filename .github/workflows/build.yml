@@ -24,7 +24,7 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install "setuptools<81" pyinstaller
+          pip install -r requirements.txt "setuptools<81" pyinstaller
 
       - name: Generar .app (PyInstaller)
         run: pyinstaller packaging/ContaStockPro.spec --clean --noconfirm
@@ -55,7 +55,8 @@ jobs:
 
       - name: Instalar dependencias y PyInstaller
         shell: pwsh
-        run: python -m pip install "setuptools<81" pyinstaller
+        # sin las dependencias de la app el .exe sale sin Flask y no abre
+        run: python -m pip install -r requirements.txt "setuptools<81" pyinstaller
 
       - name: Generar .exe (PyInstaller)
         shell: pwsh

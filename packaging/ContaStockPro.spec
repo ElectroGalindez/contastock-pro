@@ -21,6 +21,8 @@ datas = [
     (str(PROJECT_ROOT / "templates"), "templates"),
     (str(PROJECT_ROOT / "static"), "static"),
     (str(PROJECT_ROOT / "assets" / "logo.png"), "assets"),
+    # el .ico también va adentro: desktop.py se lo pone a cada ventana
+    (str(PROJECT_ROOT / "packaging" / "icons_win" / "contastock.ico"), "packaging/icons_win"),
 ]
 
 # ---------- Módulos dinámicos que PyInstaller no detecta ----------
@@ -74,6 +76,10 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # sin esto, en Windows el .exe salía con el ícono por defecto (Python)
+    icon=str(PROJECT_ROOT / "packaging" / (
+        "icons_mac/contastock.icns" if sys.platform == "darwin"
+        else "icons_win/contastock.ico")),
 )
 
 # ---------- Bundle macOS (.app) ----------

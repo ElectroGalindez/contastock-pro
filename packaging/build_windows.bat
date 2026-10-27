@@ -21,7 +21,7 @@ echo  ContaStock Pro - Build Windows
 echo ============================================
 
 echo [1/4] Instalando dependencias de build...
-pip install "setuptools<81" pyinstaller
+pip install -r requirements.txt "setuptools<81" pyinstaller
 
 echo [2/4] Generando .exe con PyInstaller...
 pyinstaller packaging\ContaStockPro.spec --clean --noconfirm

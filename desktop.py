@@ -46,13 +46,14 @@ class DesktopApi:
     def abrir_factura(self, url, titulo="Factura"):
         """Abre una ventana nativa con el PDF y devuelve True si se pudo."""
         try:
-            webview.create_window(
+            ventana = webview.create_window(
                 titulo or "Factura",
                 url,
                 width=900,
                 height=1000,
                 min_size=(520, 600),
             )
+            _con_logo(ventana)
             return True
         except Exception as e:
             print(f"No se pudo abrir la ventana de la factura: {e}")
@@ -84,6 +85,80 @@ def _centered_position(width, height):
         return None
 
 
+# ------------------------------------------------------------------
+# Logo en Windows
+# ------------------------------------------------------------------
+# Abierta desde el código (abrir_contastock.bat), quien corre la app es
+# pythonw.exe y Windows mostraba su ícono, el de Python. Se le da a la app su
+# propia identidad en la barra de tareas y se le pone el logo a cada ventana.
+APP_ID_WINDOWS = "ElectroGalindez.ContaStockPro"
+
+
+def _ruta_icono():
+    from backend.config import resource_path
+    ruta = resource_path("packaging/icons_win/contastock.ico")
+    return str(ruta) if ruta.exists() else None
+
+
+def _identidad_windows():
+    """Antes de crear ventanas: que la barra de tareas no la agrupe con Python
+    y use el ícono de la ventana en vez del de pythonw.exe."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID_WINDOWS)
+    except Exception as e:
+        print(f"No se pudo fijar la identidad de la app: {e}")
+
+
+def _poner_logo_windows():
+    """Pone el logo (grande y chico) a todas las ventanas de este proceso."""
+    icono = _ruta_icono()
+    if sys.platform != "win32" or not icono:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                                      ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        IMAGE_ICON, LR_LOADFROMFILE, WM_SETICON = 1, 0x10, 0x80
+        grande = user32.LoadImageW(None, icono, IMAGE_ICON, user32.GetSystemMetrics(11),
+                                   user32.GetSystemMetrics(12), LR_LOADFROMFILE)
+        chico = user32.LoadImageW(None, icono, IMAGE_ICON, user32.GetSystemMetrics(49),
+                                  user32.GetSystemMetrics(50), LR_LOADFROMFILE)
+        if not grande:
+            return
+
+        pid = os.getpid()
+        ventanas = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def juntar(hwnd, _):
+            dueno = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(dueno))
+            if dueno.value == pid and user32.IsWindowVisible(hwnd):
+                ventanas.append(hwnd)
+            return True
+
+        user32.EnumWindows(juntar, 0)
+        for hwnd in ventanas:
+            user32.SendMessageW(hwnd, WM_SETICON, 1, grande)        # barra de tareas / Alt+Tab
+            user32.SendMessageW(hwnd, WM_SETICON, 0, chico or grande)  # barra de título
+    except Exception as e:
+        print(f"No se pudo poner el logo: {e}")
+
+
+def _con_logo(ventana):
+    """Cuando la ventana aparezca, ponerle el logo (solo hace algo en Windows)."""
+    if sys.platform == "win32" and ventana is not None:
+        ventana.events.shown += _poner_logo_windows
+    return ventana
+
+
 def main():
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
@@ -106,8 +181,10 @@ def main():
     )
     if xy:
         kwargs["x"], kwargs["y"] = xy
-    webview.create_window(**kwargs)
-    webview.start(debug=False)
+    _identidad_windows()
+    _con_logo(webview.create_window(**kwargs))
+    # icon: lo usan Linux (GTK/Qt); en Windows lo pone _poner_logo_windows
+    webview.start(debug=False, icon=_ruta_icono())
 
 
 if __name__ == "__main__":
