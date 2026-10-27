@@ -9,6 +9,9 @@ __pycache__/
 .env
 venv/
 .env.*
+# la URL de Neon cifrada SÍ se sube; su clave (.env.clave) nunca
+!.env.cifrado
+.env.clave
 
 # Datos locales
 data/

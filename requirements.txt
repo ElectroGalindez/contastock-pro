@@ -23,6 +23,7 @@ openpyxl>=3.0
 # Seguridad / Auth
 # ======================================================
 bcrypt>=4.0
+cryptography>=42          # descifra .env.cifrado (URL de Neon)
 
 # ======================================================
 # Base de datos
