@@ -9,7 +9,7 @@ rem    1) Respalda la base local (%APPDATA%\ContaStockPro\respaldos)
 rem    2) Baja la version nueva desde GitHub
 rem    3) Actualiza las dependencias
 rem    4) Conexion a Neon (pide la clave la 1ra vez) y NEON_SYNC=1
-rem    5) Abre la app (al abrir, ajusta la base sola si hace falta)
+rem    5) Crea el acceso directo del escritorio y abre la app
 rem
 rem  Cerra la app antes de ejecutar esto.
 rem ============================================================
@@ -95,12 +95,22 @@ findstr /b /c:"NEON_SYNC=" .env >nul || (
     echo NEON_SYNC=1 agregado al .env
 )
 
-rem ---------- 5) Ejecutar ----------
+rem ---------- 5) Acceso directo y ejecutar ----------
 echo.
-echo [5/5] Iniciando ContaStock Pro...
-echo La primera subida a Neon copia la base entera; despues solo los cambios.
+echo [5/5] Creando el acceso directo "ContaStock Pro" en el escritorio...
+rem Apunta a abrir_contastock.bat: abre siempre la version actualizada, no el
+rem .exe viejo de dist\ (ese no se actualiza ni sube a Neon).
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\ContaStock Pro.lnk'); $s.TargetPath='%~dp0abrir_contastock.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0packaging\icons_win\contastock.ico'; $s.WindowStyle=7; $s.Save()"
+if errorlevel 1 (
+    echo AVISO: no se pudo crear el acceso directo. Abri la app con abrir_contastock.bat
+) else (
+    echo Listo. Desde ahora abri la app con ese acceso directo.
+    echo Si tenias otro acceso directo al .exe viejo, borralo.
+)
 echo.
-python desktop.py
+echo Iniciando ContaStock Pro...
+echo.
+call abrir_contastock.bat
 
 pause
 endlocal
