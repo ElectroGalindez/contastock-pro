@@ -102,6 +102,45 @@ def create_app():
             return f(*args, **kwargs)
         return decorated
 
+    # Modo solo lectura: la PC que mira la copia de Neon (el jefe desde la
+    # casa). Lo que se guardara ahi se perderia en la proxima subida del
+    # almacen, asi que se bloquea cualquier cambio.
+    from backend import sync_neon
+    from backend.db import DATABASE_URL
+    solo_lectura = (
+        os.getenv("CONTASTOCK_SOLO_LECTURA", "").strip().lower() in ("1", "true", "si")
+        or "neon.tech" in DATABASE_URL
+    )
+    app.config["SOLO_LECTURA"] = solo_lectura
+
+    @app.before_request
+    def bloquear_cambios_en_solo_lectura():
+        if not app.config["SOLO_LECTURA"] or request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        if request.endpoint == "login":
+            return None
+        mensaje = ("Modo consulta: esta copia es solo para ver. "
+                   "Los cambios se hacen en la app del almacen.")
+        if request.is_json or request.headers.get("X-Requested-With") == "fetch":
+            return jsonify({"ok": False, "error": mensaje}), 403
+        flash(mensaje, "warning")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    # Firma los enlaces de factura para poder abrirlos en el navegador externo
+    # (que no comparte la sesion del login) sin dejarlos publicos.
+    from itsdangerous import URLSafeTimedSerializer
+    _factura_token = URLSafeTimedSerializer(app.secret_key, salt="factura-ver")
+
+    def _token_factura(venta_id):
+        return _factura_token.dumps({"v": int(venta_id)})
+
+    def _token_factura_valido(venta_id, token):
+        try:
+            data = _factura_token.loads(token, max_age=3600)
+        except Exception:
+            return False
+        return data.get("v") == int(venta_id)
+
     @app.context_processor
     def inject_user():
         from backend.app_meta import APP_NAME, VERSION
@@ -110,6 +149,8 @@ def create_app():
             "app_name": APP_NAME,
             "app_version": VERSION,
             "fecha_hoy": date.today().strftime("%d/%m/%Y"),
+            "solo_lectura": app.config["SOLO_LECTURA"],
+            "sync_neon_activa": sync_neon.configurada(),
         }
 
     @app.route("/")
@@ -1081,43 +1122,164 @@ def create_app():
                          as_attachment=True,
                          download_name=f"factura_venta_{v['id']}.pdf")
 
+    @app.route("/factura/<int:venta_id>/ver")
+    def factura_ver(venta_id):
+        """Sirve el PDF inline para abrirlo en el navegador. Se protege con un
+        token firmado porque el navegador externo no tiene sesion de login."""
+        from backend.facturas import generar_factura
+
+        if not _token_factura_valido(venta_id, request.args.get("t", "")):
+            return "Enlace de factura invalido o expirado.", 403
+
+        if not ventas.get_sale(venta_id):
+            return "Venta no encontrada.", 404
+
+        buffer = generar_factura(venta_id)
+        if buffer is None:
+            return "No se pudo generar la factura.", 500
+
+        resp = send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=f"factura_venta_{venta_id}.pdf",
+            max_age=0,
+        )
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
+
+    @app.route("/factura/<int:venta_id>/visor")
+    def factura_visor(venta_id):
+        """Vista HTML de la factura pensada para verse e imprimirse (Cmd+P).
+
+        Se abre dentro de la app o del navegador. A diferencia del PDF crudo,
+        una pagina HTML permite boton de imprimir y el atajo del teclado.
+        """
+        token = request.args.get("t", "")
+        if not _token_factura_valido(venta_id, token):
+            return "Enlace de factura invalido o expirado.", 403
+
+        v = ventas.get_sale(venta_id)
+        if not v:
+            return "Venta no encontrada.", 404
+
+        cli = clientes.get_client(v.get("cliente_id")) or {}
+
+        vendedor = v.get("vendedor") or v.get("usuario") or ""
+        tel = str(v.get("telefono_vendedor") or "").strip()
+        if vendedor and tel:
+            if not tel.startswith("+"):
+                tel = f"+53 {tel}" if not tel.startswith("53") else f"+{tel}"
+            vendedor = f"{vendedor} ({tel})"
+
+        total = float(v.get("total") or 0)
+        pagado = float(v.get("pagado") or 0)
+        saldo = float(v.get("saldo") or 0)
+
+        return render_template(
+            "factura_visor.html",
+            venta=v,
+            cliente=cli,
+            productos=v.get("productos_vendidos") or [],
+            vendedor=vendedor,
+            total=total,
+            pagado=pagado,
+            pagado_cup=pagado * 120,
+            saldo=saldo,
+            numero=v.get("numero") or v.get("id"),
+            token=token,
+        )
+
     @app.route("/factura/<int:venta_id>/descargar", methods=["GET"])
     @login_required
     def factura_descargar(venta_id):
-        import platform
-        import shutil
-        import subprocess
+        return _preparar_factura(venta_id)
+
+    @app.route("/factura/<int:venta_id>/abrir", methods=["GET"])
+    @login_required
+    def factura_abrir(venta_id):
+        return _preparar_factura(venta_id)
+
+    @app.route("/factura/<int:venta_id>/abrir-sistema", methods=["GET"])
+    @login_required
+    def factura_abrir_sistema(venta_id):
+        """Respaldo para cuando la app corre en una ventana que no permite
+        abrir pestanas (pywebview): abre la factura en el navegador del
+        sistema con webbrowser."""
+        datos, status = _preparar_factura_data(venta_id)
+        if status != 200:
+            return jsonify(datos), status
+
+        import webbrowser
+        try:
+            webbrowser.open(datos["url"], new=2, autoraise=True)
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"No se pudo abrir el navegador: {e}"}), 500
+        return jsonify(datos)
+
+    def _preparar_factura(venta_id):
+        datos, status = _preparar_factura_data(venta_id)
+        return jsonify(datos), status
+
+    def _preparar_factura_data(venta_id):
+        """Archiva el PDF en Documentos y devuelve una URL firmada y variable
+        para abrirlo en el navegador las veces que haga falta.
+
+        Devuelve (payload, status). El PDF se regenera en cada llamada, asi que
+        siempre refleja los ultimos datos guardados de la venta.
+        """
+        import uuid
         from pathlib import Path
         from backend.facturas import generar_factura
 
         v = ventas.get_sale(venta_id)
         if not v:
-            return jsonify({"ok": False, "error": "Venta no encontrada"}), 404
+            return {"ok": False, "error": "Venta no encontrada"}, 404
 
         buffer = generar_factura(venta_id, session.get("usuario", {}).get("username", ""))
         if buffer is None:
-            return jsonify({"ok": False, "error": "No se pudo generar la factura"}), 500
+            return {"ok": False, "error": "No se pudo generar la factura"}, 500
 
         carpeta = Path.home() / "Documents" / "ElectroGalindez Facturas"
-        carpeta.mkdir(parents=True, exist_ok=True)
         filename = f"Factura_Venta_{v['id']}_{v['fecha'].strftime('%d-%m-%Y') if hasattr(v['fecha'], 'strftime') else ''}.pdf"
         ruta = carpeta / filename
 
-        with open(ruta, "wb") as f:
-            f.write(buffer.getvalue())
-
         try:
-            sistema = platform.system()
-            if sistema == "Darwin":
-                subprocess.Popen(["open", str(ruta)])
-            elif sistema == "Windows":
-                os.startfile(str(ruta))
-            else:
-                subprocess.Popen(["xdg-open", str(ruta)])
+            carpeta.mkdir(parents=True, exist_ok=True)
+            with open(ruta, "wb") as f:
+                f.write(buffer.getvalue())
         except Exception as e:
-            return jsonify({"ok": False, "error": f"Factura guardada en {ruta} pero no se pudo abrir: {e}"})
+            return {"ok": False, "error": f"No se pudo guardar la factura: {e}"}, 500
 
-        return jsonify({"ok": True, "archivo": str(ruta)})
+        token = _token_factura(v["id"])
+        base = request.host_url.rstrip("/")
+        # Parametro variable para que el navegador no muestre una copia cacheada.
+        variar = "&_=" + uuid.uuid4().hex[:12]
+        url = base + url_for("factura_visor", venta_id=v["id"], t=token) + variar
+        pdf_url = base + url_for("factura_ver", venta_id=v["id"], t=token) + variar
+
+        return {"ok": True, "archivo": str(ruta), "url": url, "pdf_url": pdf_url}, 200
+
+    # ======================================================
+    # ☁️ Copia en Neon (para ver la app desde otro lugar)
+    # ======================================================
+    @app.route("/sync/estado")
+    @login_required
+    def sync_estado():
+        return jsonify({"activa": sync_neon.configurada(), **sync_neon.leer_estado()})
+
+    @app.route("/sync/ahora", methods=["POST"])
+    @admin_required
+    def sync_ahora():
+        """Sube ya, sin esperar al proximo turno. Corre aparte para no
+        congelar la pantalla mientras sube."""
+        if not sync_neon.configurada():
+            return jsonify({"ok": False, "error": "Neon no esta configurado."}), 400
+        import threading
+        threading.Thread(target=sync_neon.sincronizar, kwargs={"forzar": True},
+                         daemon=True).start()
+        return jsonify({"ok": True})
 
     @app.route("/manifest.json")
     def manifest():
@@ -1168,4 +1330,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     application = create_app()
+    # con --debug el reloader arranca dos procesos: que suba solo el hijo
+    if not args.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        from backend import sync_neon
+        sync_neon.iniciar_automatica()
     application.run(host=args.host, port=args.port, debug=args.debug)

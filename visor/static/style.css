@@ -1,0 +1,169 @@
+/* ContaStock Visor — mismos colores que la app del almacén */
+:root {
+    --primario: #2563eb;
+    --fondo: #f1f5f9;
+    --tarjeta: #ffffff;
+    --texto: #0f172a;
+    --suave: #64748b;
+    --borde: #e2e8f0;
+    --ok: #16a34a;
+    --alerta: #dc2626;
+    --aviso: #d97706;
+    --barra-alto: 64px;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --fondo: #0b1220;
+        --tarjeta: #111a2e;
+        --texto: #e2e8f0;
+        --suave: #94a3b8;
+        --borde: #1e293b;
+        --primario: #3b82f6;
+    }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    padding-bottom: calc(var(--barra-alto) + env(safe-area-inset-bottom) + 16px);
+}
+.muted { color: var(--suave); }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ---------- Barra superior ---------- */
+.barra {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+    background: var(--fondo);
+    border-bottom: 1px solid var(--borde);
+}
+.barra h1 { margin: 0; font-size: 1.25rem; }
+.barra-acciones { display: flex; gap: 8px; }
+.icono {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 12px;
+    border: 1px solid var(--borde); background: var(--tarjeta);
+    text-decoration: none; color: var(--texto); font-size: 1.1rem;
+}
+.icono svg, .pestanas svg {
+    width: 20px; height: 20px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.pestanas svg { width: 22px; height: 22px; }
+.girando svg { animation: girar 0.8s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+/* ---------- KPIs ---------- */
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpis-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpi {
+    background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px;
+    padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+}
+.kpi span { font-size: 0.8rem; color: var(--suave); }
+.kpi strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi small { font-size: 0.75rem; }
+.kpi-principal { grid-column: 1 / -1; background: var(--primario); border-color: var(--primario); color: #fff; }
+.kpi-principal span, .kpi-principal small { color: rgba(255,255,255,0.85); }
+.kpi-principal strong { font-size: 2rem; }
+.kpi-alerta strong { color: var(--alerta); }
+.kpi-aviso strong { color: var(--aviso); }
+.kpi[data-ir] { cursor: pointer; }
+.kpi-ancho { margin-bottom: 12px; }
+@media (min-width: 760px) {
+    .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kpi-principal { grid-column: span 1; }
+    .kpi-principal strong { font-size: 1.6rem; }
+}
+
+/* ---------- Tarjetas ---------- */
+.tarjeta {
+    background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px;
+    padding: 16px; margin-bottom: 16px;
+}
+.tarjeta h2 { margin: 0 0 12px; font-size: 1rem; }
+.grafica { position: relative; height: 220px; }
+.lista-top { margin: 0; padding-left: 1.4rem; }
+.lista-top li { padding: 6px 0; border-bottom: 1px solid var(--borde); display: flex; justify-content: space-between; gap: 12px; }
+.lista-top li:last-child { border-bottom: 0; }
+
+/* ---------- Listas ---------- */
+.lista { display: flex; flex-direction: column; gap: 8px; }
+.fila {
+    background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px;
+    padding: 12px 14px;
+}
+.fila-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.fila-cab b { overflow-wrap: anywhere; }
+.fila-cab .monto { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.fila-det { margin-top: 4px; font-size: 0.85rem; color: var(--suave); }
+.fila details summary { cursor: pointer; list-style: none; }
+.fila details summary::-webkit-details-marker { display: none; }
+.productos { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.85rem; }
+.productos li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-top: 1px dashed var(--borde); }
+.etiqueta { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.e-ok { background: rgba(22,163,74,0.12); color: var(--ok); }
+.e-bajo { background: rgba(217,119,6,0.14); color: var(--aviso); }
+.e-agotado, .e-pendiente { background: rgba(220,38,38,0.12); color: var(--alerta); }
+.vacio { text-align: center; color: var(--suave); padding: 32px 0; }
+
+/* ---------- Filtros ---------- */
+.buscador, .filtro-dia input {
+    width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 1rem;
+    border: 1px solid var(--borde); background: var(--tarjeta); color: var(--texto);
+    margin-bottom: 12px;
+}
+.filtro-dia { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.filtro-dia input { margin: 0; flex: 1; min-width: 0; }
+.chips { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.chip { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--borde); background: var(--tarjeta); }
+.chip.activo { background: var(--primario); border-color: var(--primario); color: #fff; }
+
+/* ---------- Pestañas inferiores ---------- */
+.pestanas {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--tarjeta); border-top: 1px solid var(--borde);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+.pestanas button {
+    height: var(--barra-alto); border: 0; background: none; color: var(--suave);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; font-size: 0.72rem;
+}
+@media (min-width: 760px) {
+    .pestanas { padding-left: calc(50% - 300px); padding-right: calc(50% - 300px); }
+}
+.pestanas button.activo { color: var(--primario); font-weight: 600; }
+
+/* ---------- Avisos ---------- */
+.aviso { margin: 12px 16px 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; }
+.aviso-error { background: rgba(220,38,38,0.12); color: var(--alerta); }
+.aviso-viejo { color: var(--aviso); }
+
+/* ---------- Login ---------- */
+body.login { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
+.login-card {
+    width: 100%; max-width: 360px; background: var(--tarjeta); border: 1px solid var(--borde);
+    border-radius: 20px; padding: 28px 22px; display: flex; flex-direction: column; gap: 12px;
+}
+.login-card img { align-self: center; border-radius: 14px; }
+.login-card h1 { margin: 0; text-align: center; font-size: 1.3rem; }
+.login-card p { margin: 0 0 8px; text-align: center; font-size: 0.9rem; }
+.login-card .aviso { margin: 0; }
+.login-card label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--suave); }
+.login-card input {
+    padding: 12px 14px; border-radius: 12px; border: 1px solid var(--borde);
+    background: var(--fondo); color: var(--texto); font-size: 1rem;
+}
+.login-card button {
+    margin-top: 8px; padding: 13px; border: 0; border-radius: 12px;
+    background: var(--primario); color: #fff; font-weight: 600; font-size: 1rem;
+}

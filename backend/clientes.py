@@ -180,15 +180,15 @@ def listar_gestores() -> list[Dict[str, Any]]:
     with engine.connect() as conn:
         filas = conn.execute(text(
             "SELECT id, nombre, telefono, ci, chapa FROM clientes "
-            "WHERE es_gestor = 1 ORDER BY nombre"
-        )).mappings().all()
+            "WHERE es_gestor = :si ORDER BY nombre"
+        ), {"si": True}).mappings().all()
     return [dict(r) for r in filas]
 
 
 def count_gestores() -> int:
     with engine.connect() as conn:
         return conn.execute(text(
-            "SELECT COUNT(*) FROM clientes WHERE es_gestor = 1")).scalar()
+            "SELECT COUNT(*) FROM clientes WHERE es_gestor = :si"), {"si": True}).scalar()
 
 
 def _a_bool(valor) -> bool:
@@ -204,7 +204,7 @@ def set_gestor(cliente_id, es_gestor, usuario: str = "sistema") -> Optional[Dict
     gestor puede comprar, deber, aparecer en /clientes y en las ventas igual que
     cualquier otro cliente.
     """
-    valor = 1 if _a_bool(es_gestor) else 0
+    valor = _a_bool(es_gestor)
     with engine.begin() as conn:
         conn.execute(text("UPDATE clientes SET es_gestor = :v WHERE id = :i"),
                      {"v": valor, "i": cliente_id})
@@ -235,7 +235,7 @@ def set_gestores_masivo(cliente_ids, es_gestor, usuario: str = "sistema") -> int
     if not limpio:
         return 0
 
-    valor = 1 if _a_bool(es_gestor) else 0
+    valor = _a_bool(es_gestor)
     lista_ids = ",".join(str(i) for i in limpio)
     with engine.begin() as conn:
         res = conn.execute(text(

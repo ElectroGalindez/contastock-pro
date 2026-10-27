@@ -103,6 +103,15 @@
                     <small class="text-muted d-block">{{ current_user.rol }}</small>
                 </div>
             </div>
+            {% if sync_neon_activa %}
+            <div id="sync-neon" class="text-center mt-2 small">
+                <small class="text-muted" id="sync-neon-texto"><i class="bi bi-cloud"></i> Neon…</small>
+                {% if current_user.rol == 'admin' %}
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="sync-neon-btn"
+                        title="Subir ahora a Neon"><i class="bi bi-cloud-upload"></i></button>
+                {% endif %}
+            </div>
+            {% endif %}
             <small class="d-block text-muted text-center mt-2 app-version">v{{ app_version }}</small>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm w-100 mt-2">
                 <i class="bi bi-box-arrow-left"></i> Salir
@@ -122,6 +131,13 @@
                 </button>
             </div>
         </div>
+
+        {% if solo_lectura %}
+        <div class="alert alert-info py-2 small">
+            <i class="bi bi-eye"></i> Modo consulta: estás viendo la copia de Neon.
+            Se actualiza sola desde el almacén; recargá la página para ver lo último.
+        </div>
+        {% endif %}
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -198,6 +214,54 @@ window.addEventListener('load', function () {
     }
 });
 </script>
+{% if sync_neon_activa %}
+<script>
+(function () {
+    var texto = document.getElementById('sync-neon-texto');
+    var btn = document.getElementById('sync-neon-btn');
+    if (!texto) return;
+
+    function hace(iso) {
+        var min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        if (min < 1) return 'recién';
+        if (min < 60) return 'hace ' + min + ' min';
+        var h = Math.floor(min / 60);
+        return h < 24 ? 'hace ' + h + ' h' : 'hace ' + Math.floor(h / 24) + ' d';
+    }
+
+    function pintar() {
+        fetch('{{ url_for("sync_estado") }}', {cache: 'no-store'})
+            .then(function (r) { return r.json(); })
+            .then(function (e) {
+                var ok = e.ultima_ok ? 'Neon: subido ' + hace(e.ultima_ok) : 'Neon: sin subir aún';
+                if (e.resultado === 'error') {
+                    texto.innerHTML = '<i class="bi bi-cloud-slash text-warning"></i> ' + ok;
+                    texto.title = 'Último intento falló: ' + (e.error || '') +
+                        '. Se reintenta solo; los datos del almacén están a salvo.';
+                } else {
+                    texto.innerHTML = '<i class="bi bi-cloud-check text-success"></i> ' + ok;
+                    texto.title = '';
+                }
+            })
+            .catch(function () {});
+    }
+
+    if (btn) {
+        btn.addEventListener('click', function () {
+            btn.disabled = true;
+            texto.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Subiendo…';
+            fetch('{{ url_for("sync_ahora") }}', {method: 'POST', headers: {'X-Requested-With': 'fetch'}})
+                .finally(function () {
+                    setTimeout(function () { btn.disabled = false; pintar(); }, 8000);
+                });
+        });
+    }
+
+    pintar();
+    setInterval(pintar, 60000);
+})();
+</script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

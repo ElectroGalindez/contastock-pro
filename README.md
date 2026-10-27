@@ -73,6 +73,50 @@ No hace falta instalar nada desde una tienda:
 > Para uso en la red local podés agregar un certificado local (mkcert) o usar
 > la PWA desde `https://localhost`.
 
+## Ver el almacén desde otro lugar (copia en Neon)
+
+La PC del almacén trabaja siempre con su base local y, cada cierto tiempo,
+sube una copia a Neon. Desde otra PC (por ejemplo, la del jefe en la casa)
+se abre la app apuntando a esa copia, en **modo consulta**: se ve todo, pero
+no se puede modificar nada.
+
+**PC del almacén** (`.env`) — es la **única** que sube:
+
+```
+NEON_SYNC=1                   # sin esto no sube nada (la PC de desarrollo NO lo lleva)
+NEON_DATABASE_URL=postgresql://...
+NEON_SYNC_MINUTOS=30          # cada cuántos minutos sube (0 = nunca por intervalo)
+NEON_SYNC_HORAS=13:00,19:30   # opcional: además, a estas horas fijas
+```
+
+Para gastar lo mínimo del plan gratis de Neon: solo se suben las filas que
+cambiaron, si no cambió nada no se conecta, y no deja conexiones abiertas.
+En el panel de Neon conviene fijar el tamaño de cómputo en **0.25 CU**
+(mínimo y máximo), que es lo que más rinde las 100 CU-horas del mes.
+
+Sube al abrir la app y después según lo configurado. En la barra lateral se
+ve cuándo fue la última subida, y el admin tiene un botón para subir en ese
+momento.
+
+**PC del jefe** (`.env`):
+
+```
+LOCAL_DATABASE_URL=postgresql://...   # la misma URL de Neon
+CONTASTOCK_SOLO_LECTURA=1
+```
+
+Si se corta internet no pasa nada: la base local nunca se modifica al subir,
+y en Neon la copia se reemplaza en una sola transacción, así que un corte
+deja la copia anterior completa. Se reintenta solo a los 5 minutos. Si se
+abre la app con una base vacía o mucho más chica que la de Neon (otra PC),
+no sube, para no borrar los datos buenos.
+
+### Dashboard para el teléfono y la Mac
+
+Para que el jefe vea solo los números (ventas del día, inventario, deudas)
+hay una app aparte, más simple, en [`visor/`](visor/README.md). Lee la misma
+copia de Neon y se instala en el teléfono o en el Dock de la Mac.
+
 ## Desarrollo
 
 ```bash

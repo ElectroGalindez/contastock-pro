@@ -34,6 +34,11 @@ if IS_SQLITE:
         connect_args=_connect_args,
         poolclass=SingletonThreadPool,
     )
+elif "neon.tech" in DATABASE_URL:
+    # Neon plan gratis: sin pool, para que las conexiones quietas no lo
+    # mantengan despierto gastando horas de cómputo
+    from sqlalchemy.pool import NullPool
+    engine = create_engine(DATABASE_URL, echo=False, future=True, poolclass=NullPool)
 else:
     engine = create_engine(DATABASE_URL, echo=False, future=True)
 

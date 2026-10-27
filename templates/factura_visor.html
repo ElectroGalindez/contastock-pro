@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factura #{{ numero }}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    color: #111;
+    background: #f4f4f4;
+  }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+  }
+  .toolbar button,
+  .toolbar a {
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #0d6efd;
+    background: #0d6efd;
+    color: #fff;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .toolbar a.secondary { background: #fff; color: #0d6efd; }
+  .toolbar .ayuda { margin-left: auto; font-size: 12px; color: #666; }
+
+  .hoja {
+    width: 21.59cm;
+    margin: 16px auto;
+    padding: 1cm;
+    background: #fff;
+    box-shadow: 0 0 4px rgba(0, 0, 0, .2);
+  }
+
+  .factura { font-size: 12px; line-height: 1.45; }
+  .factura + .factura { margin-top: 24px; }
+
+  .cab { display: flex; gap: 16px; align-items: flex-start; }
+  .cab .logo { width: 80px; height: 70px; object-fit: contain; }
+  .cab h2 { margin: 0; font-size: 15px; }
+  .cab p { margin: 2px 0; font-size: 12px; }
+
+  .cols { display: flex; gap: 24px; margin-top: 10px; }
+  .col { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { border: 1px solid #333; padding: 5px 6px; }
+  th { background: #ddd; text-align: left; }
+  td.num, th.num { text-align: center; }
+
+  .firmas { display: flex; gap: 40px; margin-top: 36px; }
+  .firmas div {
+    flex: 1;
+    border-top: 1px solid #333;
+    padding-top: 4px;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none !important; }
+    .hoja { width: auto; margin: 0; padding: 0; box-shadow: none; }
+    .factura + .factura { page-break-before: always; margin-top: 0; }
+    @page { size: letter; margin: 1cm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button type="button" onclick="window.print()">&#128424; Imprimir</button>
+  <a class="secondary" href="{{ url_for('factura_ver', venta_id=venta.id, t=token) }}" target="_blank" rel="noopener">Descargar PDF</a>
+  <span class="ayuda">Se puede imprimir con el boton o con Cmd+P / Ctrl+P</span>
+</div>
+
+<div class="hoja">
+  {% for _copia in range(2) %}
+  <section class="factura">
+    <div class="cab">
+      <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Logo" onerror="this.style.display='none'">
+      <div>
+        <h2>Omar Gal&iacute;ndez Ramirez. CI: 85082506984</h2>
+        <p>Factura N&deg;: {{ numero }}</p>
+        <p>Fecha: {{ venta.fecha.strftime('%d/%m/%Y %H:%M') if venta.fecha else '' }}</p>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="col">
+        <div><strong>Cliente:</strong> {{ cliente['nombre'] or '' }}</div>
+        <div><strong>Carnet/ID:</strong> {{ cliente['ci'] or '' }}</div>
+        <div><strong>Chapa:</strong> {{ cliente['chapa'] or '' }}</div>
+        <div><strong>Direcci&oacute;n:</strong> {{ cliente['direccion'] or '' }}</div>
+        <div><strong>Tel&eacute;fono:</strong> {{ cliente['telefono'] or '' }}</div>
+      </div>
+      <div class="col">
+        <div><strong>Total:</strong> ${{ '%.2f'|format(total) }}</div>
+        <div><strong>Pagado:</strong> (USD) {{ '%.2f'|format(pagado) }} - (CUP) {{ '%.2f'|format(pagado_cup) }}</div>
+        <div><strong>Saldo pendiente:</strong> ${{ '%.2f'|format(saldo) }}</div>
+        <div><strong>M&eacute;todo de pago:</strong> {{ venta.tipo_pago or '' }}</div>
+        {% if venta.observaciones %}
+        <div><strong>Observaciones:</strong> {{ venta.observaciones }}</div>
+        {% endif %}
+        <div><strong>Vendedor:</strong> {{ vendedor }}</div>
+        <div><strong>Chofer:</strong> {{ venta.chofer or '' }}</div>
+        <div><strong>Chapa:</strong> {{ venta.chapa or '' }}</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th class="num">Cantidad</th>
+          <th class="num">Precio Unitario</th>
+          <th class="num">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in productos %}
+        <tr>
+          <td>{{ p['nombre'] }}</td>
+          <td class="num">{{ '%.0f'|format(p['cantidad']|float) }}</td>
+          <td class="num">${{ '%.2f'|format(p['precio_unitario']|float) }}</td>
+          <td class="num">${{ '%.2f'|format((p['cantidad']|float) * (p['precio_unitario']|float)) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="firmas">
+      <div>Firma Cliente</div>
+      <div>Firma Vendedor</div>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<script>
+  document.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P')) {
+      e.preventDefault();
+      window.print();
+    }
+  });
+</script>
+</body>
+</html>

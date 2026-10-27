@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Visor">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<title>{{ app_name }}</title>
+</head>
+<body>
+<header class="barra">
+  <div>
+    <h1 id="titulo">Resumen</h1>
+    <small id="frescura" class="muted">Cargando…</small>
+  </div>
+  <div class="barra-acciones">
+    <button id="recargar" class="icono" title="Actualizar" aria-label="Actualizar">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+    <a href="/logout" class="icono" title="Salir ({{ usuario }})" aria-label="Salir">
+      <svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg></a>
+  </div>
+</header>
+
+<div id="error" class="aviso aviso-error" hidden></div>
+
+<main>
+  <!-- RESUMEN -->
+  <section id="v-resumen" class="vista">
+    <div class="kpis">
+      <article class="kpi kpi-principal">
+        <span>Ventas de hoy</span>
+        <strong id="k-hoy">—</strong>
+        <small id="k-hoy-sub" class="muted"></small>
+      </article>
+      <article class="kpi"><span>Cobrado hoy</span><strong id="k-cobrado">—</strong></article>
+      <article class="kpi"><span>Fiado hoy</span><strong id="k-fiado">—</strong></article>
+      <article class="kpi"><span>Ventas del mes</span><strong id="k-mes">—</strong>
+        <small id="k-mes-sub" class="muted"></small></article>
+      <article class="kpi kpi-alerta" data-ir="deudas"><span>Deuda pendiente</span>
+        <strong id="k-deuda">—</strong><small id="k-deuda-sub" class="muted"></small></article>
+      <article class="kpi kpi-aviso" data-ir="inventario"><span>Stock bajo</span>
+        <strong id="k-bajo">—</strong><small id="k-bajo-sub" class="muted"></small></article>
+      <article class="kpi kpi-alerta" data-ir="inventario"><span>Agotados</span>
+        <strong id="k-agotados">—</strong><small id="k-agotados-sub" class="muted"></small></article>
+    </div>
+
+    <article class="tarjeta">
+      <h2>Ventas de los últimos 30 días</h2>
+      <div class="grafica"><canvas id="g-serie" aria-label="Ventas por día"></canvas></div>
+    </article>
+
+    <article class="tarjeta">
+      <h2>Más vendidos del mes</h2>
+      <ol id="top" class="lista-top"></ol>
+    </article>
+  </section>
+
+  <!-- VENTAS -->
+  <section id="v-ventas" class="vista" hidden>
+    <div class="filtro-dia">
+      <button class="icono" data-dia="-1" aria-label="Día anterior">‹</button>
+      <input type="date" id="dia">
+      <button class="icono" data-dia="1" aria-label="Día siguiente">›</button>
+    </div>
+    <div class="kpis kpis-3">
+      <article class="kpi"><span>Ventas</span><strong id="vd-n">—</strong></article>
+      <article class="kpi"><span>Total</span><strong id="vd-total">—</strong></article>
+      <article class="kpi"><span>Fiado</span><strong id="vd-fiado">—</strong></article>
+    </div>
+    <div id="lista-ventas" class="lista"></div>
+  </section>
+
+  <!-- INVENTARIO -->
+  <section id="v-inventario" class="vista" hidden>
+    <input type="search" id="buscar-prod" placeholder="Buscar producto o categoría…" class="buscador">
+    <div class="chips">
+      <button class="chip activo" data-filtro="todos">Todos</button>
+      <button class="chip" data-filtro="bajo">Stock bajo</button>
+      <button class="chip" data-filtro="agotado">Agotados</button>
+    </div>
+    <div id="lista-inv" class="lista"></div>
+  </section>
+
+  <!-- DEUDAS -->
+  <section id="v-deudas" class="vista" hidden>
+    <article class="kpi kpi-alerta kpi-ancho"><span>Total pendiente</span>
+      <strong id="d-total">—</strong><small id="d-sub" class="muted"></small></article>
+    <input type="search" id="buscar-cli" placeholder="Buscar cliente…" class="buscador">
+    <div id="lista-deudas" class="lista"></div>
+  </section>
+</main>
+
+<nav class="pestanas" aria-label="Secciones">
+  <button data-vista="resumen" class="activo"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resumen</button>
+  <button data-vista="ventas"><svg viewBox="0 0 24 24"><path d="M6 3h12l1 18-3-2-2 2-2-2-2 2-2-2-3 2zM9 8h6M9 12h6"/></svg>Ventas</button>
+  <button data-vista="inventario"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"/></svg>Inventario</button>
+  <button data-vista="deudas"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v6M12 16.5v.5"/></svg>Deudas</button>
+</nav>
+
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

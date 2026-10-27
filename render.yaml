@@ -1,0 +1,21 @@
+# Despliegue del visor en Render (https://render.com): New > Blueprint > este repo.
+services:
+  - type: web
+    name: contastock-visor
+    runtime: python
+    rootDir: visor
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --threads 4 --timeout 60 --bind 0.0.0.0:$PORT
+    healthCheckPath: /salud
+    envVars:
+      - key: VISOR_DATABASE_URL
+        sync: false          # pegar la URL de Neon en el panel de Render
+      - key: VISOR_SECRET_KEY
+        generateValue: true
+      - key: VISOR_TZ
+        value: America/Havana
+      - key: VISOR_ROLES
+        value: admin
+      - key: PYTHON_VERSION
+        value: 3.11.9

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Visor">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<title>{{ app_name }}</title>
+</head>
+<body class="login">
+<form method="post" class="login-card" autocomplete="on">
+  <img src="/static/icons/icon-192.png" alt="" width="64" height="64">
+  <h1>{{ app_name }}</h1>
+  <p class="muted">Ventas, inventario y deudas del almacén</p>
+  {% if error %}<div class="aviso aviso-error">{{ error }}</div>{% endif %}
+  <label>Usuario
+    <input name="username" autocomplete="username" autocapitalize="none" required autofocus>
+  </label>
+  <label>Contraseña
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Entrar</button>
+</form>
+</body>
+</html>
