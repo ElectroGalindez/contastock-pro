@@ -1,7 +1,7 @@
 // Guarda la "cáscara" de la app (estilos, scripts, iconos) para que abra
 // rápido. Los datos (/api) siempre se piden a la red: nunca se muestran
 // números viejos como si fueran actuales.
-var VERSION = 'visor-v1';
+var VERSION = 'visor-v2';
 var CASCARA = [
     '/static/style.css', '/static/app.js', '/static/vendor/chart.umd.min.js',
     '/static/icons/icon-192.png', '/static/icons/icon-512.png'

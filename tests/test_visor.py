@@ -155,3 +155,20 @@ def test_visor_no_tiene_rutas_de_escritura(cliente_web):
     escrituras = [r.rule for r in app.url_map.iter_rules()
                   if r.methods & {"POST", "PUT", "DELETE", "PATCH"} and r.rule != "/login"]
     assert escrituras == []
+
+
+def test_resumen_por_producto_del_dia(producto):
+    """Tabla de Ventas: cuánto se vendió de cada producto ese día."""
+    otro = productos.guardar_producto("Fogón", 10, 50, None, "admin")
+    otro_id = [p for p in productos.list_products() if p["nombre"] == "Fogón"][0]["id"]
+    cli = add_client(nombre="Ana", telefono="1", ci=None, direccion=None, chapa=None)
+    ventas.register_sale(cli["id"], 50, 50, "admin", "Efectivo", [
+        {"id": producto["id"], "nombre": producto["nombre"], "cantidad": 2, "precio_unitario": 10},
+        {"id": otro_id, "nombre": "Fogón", "cantidad": 3, "precio_unitario": 10}])
+    ventas.register_sale(cli["id"], 10, 10, "admin", "Efectivo", [
+        {"id": otro_id, "nombre": "Fogón", "cantidad": 1, "precio_unitario": 10}])
+
+    filas = datos.ventas_del_dia(date.today())["por_producto"]
+    assert filas[0] == {"nombre": "Fogón", "cantidad": 4.0, "total": 40.0, "ventas": 2}
+    assert filas[1] == {"nombre": producto["nombre"], "cantidad": 2.0, "total": 20.0, "ventas": 1}
+    assert datos.ventas_del_dia(date(2000, 1, 1))["por_producto"] == []

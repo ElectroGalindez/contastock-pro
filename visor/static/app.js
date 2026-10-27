@@ -124,6 +124,7 @@
         $('vd-n').textContent = d.totales.cantidad;
         $('vd-total').textContent = $c(d.totales.total);
         $('vd-fiado').textContent = $c(d.totales.pendiente);
+        pintarPorProducto(d.por_producto || []);
         $('lista-ventas').innerHTML = d.ventas.length ? d.ventas.map(function (v) {
             var prods = v.productos.map(function (p) {
                 return '<li><span>' + num.format(p.cantidad) + ' × ' + esc(p.nombre) + '</span><span>' + $$(p.subtotal) + '</span></li>';
@@ -137,6 +138,21 @@
                 '<div class="fila-det">Vendió: ' + esc(v.vendedor) + ' · Pagó ' + $$(v.pagado) + '</div>' +
                 '</details></div>';
         }).join('') : '<div class="vacio">No hay ventas este día</div>';
+    }
+
+    function pintarPorProducto(filas) {
+        $('por-producto-tarjeta').hidden = !filas.length;
+        $('por-producto').innerHTML = filas.map(function (p) {
+            return '<tr><td>' + esc(p.nombre) +
+                '<small class="muted"> · ' + p.ventas + (p.ventas === 1 ? ' venta' : ' ventas') + '</small></td>' +
+                '<td class="num"><b>' + num.format(p.cantidad) + '</b></td>' +
+                '<td class="num">' + $$(p.total) + '</td></tr>';
+        }).join('');
+        var unidades = filas.reduce(function (a, p) { return a + p.cantidad; }, 0);
+        var importe = filas.reduce(function (a, p) { return a + p.total; }, 0);
+        $('por-producto-total').innerHTML = filas.length ?
+            '<tr><td>Total · ' + filas.length + ' productos</td><td class="num">' + num.format(unidades) +
+            '</td><td class="num">' + $$(importe) + '</td></tr>' : '';
     }
 
     // ---------------- Inventario ----------------

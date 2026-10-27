@@ -236,7 +236,25 @@ def ventas_del_dia(dia: date | None = None) -> dict:
             "tipo_pago": v["tipo_pago"] or "", "vendedor": v["usuario"] or "",
             "productos": _productos(v["productos_vendidos"]),
         })
-    return {"dia": dia.isoformat(), "totales": totales, "ventas": ventas}
+    return {"dia": dia.isoformat(), "totales": totales, "ventas": ventas,
+            "por_producto": resumen_por_producto(ventas)}
+
+
+def resumen_por_producto(ventas: list) -> list:
+    """Cuánto se vendió de cada producto en esas ventas: unidades, dinero y en
+    cuántas ventas apareció. De más a menos unidades."""
+    resumen = {}
+    for v in ventas:
+        for p in v["productos"]:
+            fila = resumen.setdefault(p["nombre"] or "Sin nombre",
+                                      {"cantidad": 0.0, "total": 0.0, "ventas": set()})
+            fila["cantidad"] += p["cantidad"]
+            fila["total"] += p["subtotal"]
+            fila["ventas"].add(v["id"])
+    return [{"nombre": nombre, "cantidad": round(f["cantidad"], 2),
+             "total": round(f["total"], 2), "ventas": len(f["ventas"])}
+            for nombre, f in sorted(resumen.items(),
+                                    key=lambda x: (-x[1]["cantidad"], x[0].lower()))]
 
 
 # ======================================================
