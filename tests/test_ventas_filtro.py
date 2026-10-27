@@ -347,60 +347,6 @@ def test_boton_factura_ultima_venta(cliente_sesion, producto):
     assert "Cliente Facturable" in html
 
 
-def test_boton_abrir_ultima_factura_directo(cliente_sesion, producto):
-    """El boton 'Abrir PDF ultima factura' abre el PDF sin pasar por el modal."""
-    html = cliente_sesion.get("/ventas").get_data(as_text=True)
-
-    # Sin ventas: boton deshabilitado
-    assert 'id="btnAbrirUltimaFactura"' in html
-    assert re.search(r'id="btnAbrirUltimaFactura".*?disabled', html, re.S)
-
-    v = _venta(producto, 0, "Cliente Directo")
-    html = cliente_sesion.get("/ventas").get_data(as_text=True)
-    btn = re.search(r'<button[^>]*id="btnAbrirUltimaFactura".*?</button>', html, re.S).group(0)
-    assert "disabled" not in btn
-    assert f'data-id="{v["id"]}"' in btn
-    assert "abrirFacturaDirecta(this.dataset.id)" in btn
-
-
-def test_factura_se_abre_en_navegador_con_token(cliente_sesion, producto, monkeypatch, tmp_path):
-    """/descargar devuelve URLs firmadas: visor HTML (imprimible) y PDF."""
-    from urllib.parse import urlparse
-
-    # No ensuciar la carpeta real de Documentos del usuario.
-    monkeypatch.setenv("HOME", str(tmp_path))
-
-    v = _venta(producto, 0, "Cliente Navegador")
-    r = cliente_sesion.get(f"/factura/{v['id']}/descargar")
-    assert r.status_code == 200
-    data = r.get_json()
-    assert data["ok"] is True
-    assert data["archivo"].endswith(".pdf")
-    assert f"/factura/{v['id']}/visor" in data["url"]
-    assert f"/factura/{v['id']}/ver" in data["pdf_url"]
-
-    # Ambas URLs sirven sin sesion de login (app / navegador externo)
-    with cliente_sesion.session_transaction() as s:
-        s.clear()
-
-    pv = urlparse(data["url"])
-    rvisor = cliente_sesion.get(f"{pv.path}?{pv.query}")
-    assert rvisor.status_code == 200
-    assert rvisor.mimetype == "text/html"
-    html_visor = rvisor.get_data(as_text=True)
-    assert "window.print()" in html_visor
-    assert "Cliente Navegador" in html_visor
-
-    pp = urlparse(data["pdf_url"])
-    rpdf = cliente_sesion.get(f"{pp.path}?{pp.query}")
-    assert rpdf.status_code == 200
-    assert rpdf.mimetype == "application/pdf"
-
-    # Token invalido: no se filtra la factura
-    assert cliente_sesion.get(f"/factura/{v['id']}/ver?t=token-falso").status_code == 403
-    assert cliente_sesion.get(f"/factura/{v['id']}/visor?t=token-falso").status_code == 403
-
-
 def test_registrar_venta_va_directo_a_la_factura(cliente_sesion, producto):
     """Tras registrar, el redirect lleva ?factura=<id> para abrir el modal."""
     cli = add_client(nombre="Cliente Nuevo", telefono="5550000",

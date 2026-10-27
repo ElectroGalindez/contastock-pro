@@ -34,41 +34,6 @@ def start_flask():
     app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
 
 
-class DesktopApi:
-    """Puente JavaScript -> Python para la app de escritorio (pywebview).
-
-    Se expone en el navegador como ``window.pywebview.api``. Asi la interfaz
-    puede abrir la factura en una ventana nativa dentro de la propia app, sin
-    depender de lanzar programas externos (que en macOS solo funcionaban una
-    vez por sesion).
-    """
-
-    def abrir_factura(self, url, titulo="Factura"):
-        """Abre una ventana nativa con el PDF y devuelve True si se pudo."""
-        try:
-            ventana = webview.create_window(
-                titulo or "Factura",
-                url,
-                width=900,
-                height=1000,
-                min_size=(520, 600),
-            )
-            _con_logo(ventana)
-            return True
-        except Exception as e:
-            print(f"No se pudo abrir la ventana de la factura: {e}")
-            return False
-
-    def abrir_en_navegador(self, url):
-        """Respaldo: abre la factura en el navegador del sistema."""
-        import webbrowser
-        try:
-            return bool(webbrowser.open(url, new=2, autoraise=True))
-        except Exception as e:
-            print(f"No se pudo abrir el navegador: {e}")
-            return False
-
-
 def _centered_position(width, height):
     """Posiciona la ventana al centro de la pantalla (solo Windows)."""
     if sys.platform != "win32":
@@ -90,7 +55,7 @@ def _centered_position(width, height):
 # ------------------------------------------------------------------
 # Abierta desde el código (abrir_contastock.bat), quien corre la app es
 # pythonw.exe y Windows mostraba su ícono, el de Python. Se le da a la app su
-# propia identidad en la barra de tareas y se le pone el logo a cada ventana.
+# propia identidad en la barra de tareas y se le pone el logo a la ventana.
 APP_ID_WINDOWS = "ElectroGalindez.ContaStockPro"
 
 
@@ -177,7 +142,6 @@ def main():
         min_size=(1100, 720),
         resizable=True,
         text_select=True,
-        js_api=DesktopApi(),
     )
     if xy:
         kwargs["x"], kwargs["y"] = xy

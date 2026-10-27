@@ -211,19 +211,6 @@
                             Factura de la ultima venta
                         {% endif %}
                     </button>
-                    <button class="btn btn-outline-secondary" id="btnAbrirUltimaFactura"
-                            onclick="abrirFacturaDirecta(this.dataset.id)"
-                            data-id="{{ ultima_venta.id if ultima_venta else '' }}"
-                            {% if not ultima_venta %}disabled title="Todavia no hay ventas registradas"{% else %}
-                            title="Ver e imprimir la factura de la ultima venta (#{{ ultima_venta.id }} - {{ ultima_venta.cliente_nombre }})"
-                            {% endif %}>
-                        <i class="bi bi-printer"></i>
-                        {% if ultima_venta %}
-                            Ver / Imprimir ultima factura #{{ ultima_venta.id }}
-                        {% else %}
-                            Ver / Imprimir ultima factura
-                        {% endif %}
-                    </button>
                     {% if ultima_venta %}
                     <small class="text-muted text-center">
                         Ultima: <strong>#{{ ultima_venta.id }}</strong>
@@ -1068,86 +1055,10 @@ function registrarVenta() {
     document.getElementById('formRegistrar').submit();
 }
 
-/* Lee una respuesta como JSON sin romperse si el servidor devuelve HTML
-   (por ejemplo un 500 en crudo). Asi el usuario no ve un "Error de
-   conexion" enganoso. */
-async function leerJson(res) {
-    const texto = await res.text();
-    try {
-        return JSON.parse(texto);
-    } catch (_) {
-        throw new Error('El servidor devolvio una respuesta inesperada (' + res.status + ')');
-    }
-}
-
-function mostrarToastFactura(mensaje) {
-    const cont = document.createElement('div');
-    cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
-    cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
-        + '<div class="d-flex"><div class="toast-body">'
-        + '<i class="bi bi-check-circle-fill me-2"></i>' + mensaje
-        + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
-    document.body.appendChild(cont);
-    setTimeout(() => cont.remove(), 6000);
-}
-
-/* Detecta si la interfaz corre dentro de la app de escritorio (pywebview),
-   donde podemos abrir una ventana nativa para el PDF. */
-function enAppEscritorio() {
-    return !!(window.pywebview && window.pywebview.api && window.pywebview.api.abrir_factura);
-}
-
-/* Abre la factura en una ventana. En la app de escritorio usa una ventana
-   nativa (funciona siempre, las veces que sea). En el navegador abre una
-   pestana. Si nada de eso esta disponible, el servidor abre el navegador. */
-async function abrirPdfEnNavegador(id, url, ventana) {
-    if (enAppEscritorio()) {
-        const ok = await window.pywebview.api.abrir_factura(url, 'Factura');
-        if (ok) return;
-    }
-    if (ventana && !ventana.closed) {
-        ventana.location.href = url;
-        return;
-    }
-    const res = await fetch('/factura/' + id + '/abrir-sistema', { method: 'GET' });
-    const data = await leerJson(res);
-    if (!data.ok) throw new Error(data.error || 'No se pudo abrir la factura');
-}
-
-/* Abre directamente el PDF de la ultima venta, sin pasar por el formulario.
-   Se puede pulsar cuantas veces se quiera. */
-async function abrirFacturaDirecta(id) {
-    if (!id) { alert('Todavia no hay ninguna venta registrada'); return; }
-    // En el navegador, abrir la pestana de forma sincrona evita el bloqueo de
-    // popups. En la app de escritorio no hace falta (usamos ventana nativa).
-    const ventana = enAppEscritorio() ? null : window.open('', '_blank');
-    const btn = document.getElementById('btnAbrirUltimaFactura');
-    const previo = btn ? btn.innerHTML : '';
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Abriendo...';
-    }
-    try {
-        const res = await fetch('/factura/' + id + '/descargar', { method: 'GET' });
-        const data = await leerJson(res);
-        if (!data.ok) throw new Error(data.error || 'No se pudo generar la factura');
-        await abrirPdfEnNavegador(id, data.url, ventana);
-        mostrarToastFactura('Factura #' + id + ' abierta.<br><small>Guardada en: ' + data.archivo + '</small>');
-    } catch (err) {
-        if (ventana && !ventana.closed) ventana.close();
-        alert('Error: ' + err.message);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = previo;
-        }
-    }
-}
-
 async function descargarFactura(id) {
     try {
         const res = await fetch('/factura/' + id + '/descargar', { method: 'GET' });
-        const data = await leerJson(res);
+        const data = await res.json();
         if (data.ok) {
             const crearToast = () => {
                 const cont = document.createElement('div');
@@ -1233,9 +1144,6 @@ function formatMoney(n) {
 
 async function guardarYDescargarFactura() {
     const btn = document.querySelector('#modalDatosFactura .modal-footer .btn-danger');
-    // En el navegador abrimos la pestana de forma sincrona (evita el bloqueo
-    // de popups). En la app de escritorio usamos ventana nativa.
-    const ventana = enAppEscritorio() ? null : window.open('', '_blank');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
     document.getElementById('facturaMsg').innerHTML = '';
@@ -1254,23 +1162,23 @@ async function guardarYDescargarFactura() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        const d = await leerJson(r);
+        const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'No se pudo guardar');
 
+        const ultimaFactura = { ventaId: facturaVentaIdActual, archivo: null };
         const res = await fetch('/factura/' + facturaVentaIdActual + '/descargar', { method: 'GET' });
-        const pdf = await leerJson(res);
+        const pdf = await res.json();
         if (!pdf.ok) throw new Error(pdf.error || 'No se pudo generar la factura');
+        ultimaFactura.archivo = pdf.archivo;
 
         bootstrap.Modal.getInstance(document.getElementById('modalDatosFactura')).hide();
-
-        await abrirPdfEnNavegador(facturaVentaIdActual, pdf.url, ventana);
 
         const crearToast = () => {
             const cont = document.createElement('div');
             cont.className = 'toast-container position-fixed bottom-0 end-0 p-3';
             cont.innerHTML = '<div class="toast show text-bg-success align-items-center" role="alert">'
                 + '<div class="d-flex"><div class="toast-body">'
-                + '<i class="bi bi-check-circle-fill me-2"></i>Factura #' + facturaVentaIdActual + ' guardada y abierta.<br>'
+                + '<i class="bi bi-check-circle-fill me-2"></i>Factura #' + facturaVentaIdActual + ' guardada y abierta en su visor PDF.<br>'
                 + '<small>Guardada en: ' + pdf.archivo + '</small>'
                 + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
             document.body.appendChild(cont);
@@ -1278,7 +1186,6 @@ async function guardarYDescargarFactura() {
         };
         crearToast();
     } catch (err) {
-        if (ventana && !ventana.closed) ventana.close();
         document.getElementById('facturaMsg').innerHTML = '<div class="alert alert-danger py-2">Error: ' + err.message + '</div>';
     } finally {
         btn.disabled = false;
